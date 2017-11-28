@@ -168,8 +168,8 @@ int main(void)
   radioHandlerHandle = osThreadCreate(osThread(radioHandler), NULL);
 
   /* definition and creation of SDCardLogger */
-  osThreadDef(SDCardLogger, startSDCardLogger, osPriorityIdle, 0, 128);
-  SDCardLoggerHandle = osThreadCreate(osThread(SDCardLogger), NULL);
+  //osThreadDef(SDCardLogger, startSDCardLogger, osPriorityIdle, 0, 128);
+  //SDCardLoggerHandle = osThreadCreate(osThread(SDCardLogger), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -567,6 +567,9 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, LED_2_Pin|LED_1_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPS_EXTINT_Pin|GPS_RESET_N_Pin|RADIO_RESET_N_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
@@ -576,6 +579,13 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = SD_CD_Pin|RADIO_DIO_4_Pin|RADIO_DIO_5_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LED_2_Pin LED_1_Pin */
+  GPIO_InitStruct.Pin = LED_2_Pin|LED_1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PA2 */
@@ -634,13 +644,16 @@ static void MX_GPIO_Init(void)
 void startRadioHandler(void const * argument)
 {
   /* init code for FATFS */
-  MX_FATFS_Init();
+  //MX_FATFS_Init();
+  HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
 
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	HAL_GPIO_TogglePin(LED_1_GPIO_Port, LED_1_Pin);
+	HAL_GPIO_TogglePin(LED_2_GPIO_Port, LED_2_Pin);
+    osDelay(500);
   }
   /* USER CODE END 5 */ 
 }

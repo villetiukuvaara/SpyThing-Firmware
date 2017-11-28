@@ -59,6 +59,10 @@
 
 #define SD_CD_Pin GPIO_PIN_13
 #define SD_CD_GPIO_Port GPIOC
+#define LED_2_Pin GPIO_PIN_0
+#define LED_2_GPIO_Port GPIOC
+#define LED_1_Pin GPIO_PIN_1
+#define LED_1_GPIO_Port GPIOC
 #define DEBUG_UART_TX_Pin GPIO_PIN_0
 #define DEBUG_UART_TX_GPIO_Port GPIOA
 #define DEBUG_UART_RX_Pin GPIO_PIN_1
