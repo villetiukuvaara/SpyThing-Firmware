@@ -53,8 +53,6 @@ extern DMA_HandleTypeDef hdma_i2c1_rx;
 
 extern DMA_HandleTypeDef hdma_i2c1_tx;
 
-extern DMA_HandleTypeDef hdma_sdmmc1;
-
 extern DMA_HandleTypeDef hdma_uart4_rx;
 
 extern DMA_HandleTypeDef hdma_uart4_tx;
@@ -91,9 +89,9 @@ void HAL_MspInit(void)
   /* DebugMonitor_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DebugMonitor_IRQn, 0, 0);
   /* PendSV_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(PendSV_IRQn, 15, 0);
+  HAL_NVIC_SetPriority(PendSV_IRQn, 0, 0);
   /* SysTick_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(SysTick_IRQn, 15, 0);
+  HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 
   /* USER CODE BEGIN MspInit 1 */
 
@@ -226,9 +224,9 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
     __HAL_LINKDMA(hi2c,hdmatx,hdma_i2c1_tx);
 
     /* I2C1 interrupt Init */
-    HAL_NVIC_SetPriority(I2C1_EV_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(I2C1_EV_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(I2C1_EV_IRQn);
-    HAL_NVIC_SetPriority(I2C1_ER_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(I2C1_ER_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(I2C1_ER_IRQn);
   /* USER CODE BEGIN I2C1_MspInit 1 */
 
@@ -378,31 +376,8 @@ void HAL_SD_MspInit(SD_HandleTypeDef* hsd)
     GPIO_InitStruct.Alternate = GPIO_AF12_SDMMC1;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-    /* SDMMC1 DMA Init */
-    /* SDMMC1 Init */
-    hdma_sdmmc1.Instance = DMA2_Channel4;
-    hdma_sdmmc1.Init.Request = DMA_REQUEST_7;
-    hdma_sdmmc1.Init.Direction = DMA_MEMORY_TO_PERIPH;
-    hdma_sdmmc1.Init.PeriphInc = DMA_PINC_DISABLE;
-    hdma_sdmmc1.Init.MemInc = DMA_MINC_ENABLE;
-    hdma_sdmmc1.Init.PeriphDataAlignment = DMA_PDATAALIGN_WORD;
-    hdma_sdmmc1.Init.MemDataAlignment = DMA_MDATAALIGN_WORD;
-    hdma_sdmmc1.Init.Mode = DMA_NORMAL;
-    hdma_sdmmc1.Init.Priority = DMA_PRIORITY_HIGH;
-    if (HAL_DMA_Init(&hdma_sdmmc1) != HAL_OK)
-    {
-      _Error_Handler(__FILE__, __LINE__);
-    }
-
-    /* Several peripheral DMA handle pointers point to the same DMA handle.
-     Be aware that there is only one channel to perform all the requested DMAs. */
-    /* Be sure to change transfer direction before calling
-     HAL_SD_ReadBlocks_DMA or HAL_SD_WriteBlocks_DMA. */
-    __HAL_LINKDMA(hsd,hdmarx,hdma_sdmmc1);
-    __HAL_LINKDMA(hsd,hdmatx,hdma_sdmmc1);
-
     /* SDMMC1 interrupt Init */
-    HAL_NVIC_SetPriority(SDMMC1_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(SDMMC1_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(SDMMC1_IRQn);
   /* USER CODE BEGIN SDMMC1_MspInit 1 */
 
@@ -434,10 +409,6 @@ void HAL_SD_MspDeInit(SD_HandleTypeDef* hsd)
                           |GPIO_PIN_12);
 
     HAL_GPIO_DeInit(GPIOD, GPIO_PIN_2);
-
-    /* SDMMC1 DMA DeInit */
-    HAL_DMA_DeInit(hsd->hdmarx);
-    HAL_DMA_DeInit(hsd->hdmatx);
 
     /* SDMMC1 interrupt DeInit */
     HAL_NVIC_DisableIRQ(SDMMC1_IRQn);
@@ -565,7 +536,7 @@ void HAL_UART_MspInit(UART_HandleTypeDef* huart)
     __HAL_LINKDMA(huart,hdmatx,hdma_uart4_tx);
 
     /* UART4 interrupt Init */
-    HAL_NVIC_SetPriority(UART4_IRQn, 5, 0);
+    HAL_NVIC_SetPriority(UART4_IRQn, 0, 0);
     HAL_NVIC_EnableIRQ(UART4_IRQn);
   /* USER CODE BEGIN UART4_MspInit 1 */
 

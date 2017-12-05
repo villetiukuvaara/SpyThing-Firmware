@@ -48,8 +48,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32l4xx_hal.h"
-#include "cmsis_os.h"
 #include "fatfs.h"
+#include "retarget.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -66,7 +66,6 @@ DMA_HandleTypeDef hdma_i2c1_tx;
 RTC_HandleTypeDef hrtc;
 
 SD_HandleTypeDef hsd1;
-DMA_HandleTypeDef hdma_sdmmc1;
 
 SPI_HandleTypeDef hspi1;
 
@@ -77,8 +76,6 @@ DMA_HandleTypeDef hdma_uart4_tx;
 DMA_HandleTypeDef hdma_usart3_rx;
 
 DMA_HandleTypeDef hdma_memtomem_dma1_channel1;
-osThreadId radioHandlerHandle;
-osThreadId SDCardLoggerHandle;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -95,11 +92,8 @@ static void MX_USART3_UART_Init(void);
 static void MX_UART4_Init(void);
 static void MX_RTC_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_USB_OTG_FS_USB_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_I2C1_Init(void);
-void startRadioHandler(void const * argument);
-void startSDCardLogger(void const * argument);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -142,48 +136,84 @@ int main(void)
   MX_UART4_Init();
   MX_RTC_Init();
   MX_SPI1_Init();
-  MX_USB_OTG_FS_USB_Init();
   MX_I2C2_Init();
+  //MX_FATFS_Init();
   MX_I2C1_Init();
 
   /* USER CODE BEGIN 2 */
 
+  RetargetInit(&huart4);
+  printf("Started app\n");
+
+    HAL_StatusTypeDef stat = HAL_SD_Init(&hsd1);
+    if(stat != HAL_OK)
+    	printf("Could not init\n");
+    else
+    	printf("Initialized SD\n");
+
+    HAL_Delay(100);
+    HAL_SD_CardStateTypedef s2 = HAL_SD_GetCardState(&hsd1);
+    printf("state = %u\n", s2);
+
+    /*HAL_SD_CardCIDTypedef cid;
+    HAL_SD_GetCardCID(&hsd1, &cid);*/
+
+
+    HAL_Delay(100);
+    HAL_SD_CardInfoTypeDef info;
+    memset(&info, 0, sizeof(HAL_SD_CardInfoTypeDef));
+    BSP_SD_GetCardInfo(&info);
+
+
+    do
+    {
+    	HAL_Delay(500);
+		HAL_SD_CardStatusTypedef status;
+		memset(&status, 0, sizeof(HAL_SD_CardStatusTypedef));
+		stat = HAL_SD_GetCardStatus(&hsd1, &status);
+		printf("stat = %u", stat);
+    } while(stat != HAL_OK);
+
+    MX_FATFS_Init();
+    //HAL_Delay(100);
+
+    if(retSD != 0)
+	{
+		printf("Unable to init FATFS\n");
+		while(1);
+	}
+
+	FATFS fs;
+	FIL fil;
+	char line[100] = "Hello from STM32!";
+	FRESULT fr;
+	UINT bytes;
+
+	fr = f_mount(&fs, SD_Path, 0);
+
+	if(fr != FR_OK)
+	{
+		printf("Could not mount\n");
+		while(1);
+	}
+
+
+	fr = f_open(&fil, "message.txt", FA_CREATE_ALWAYS);
+	if (fr != FR_OK)
+	{
+		printf("Could not open");
+		while(1);
+	}
+
+	fr = f_write(&fil, "Hi from STM32", 3, &bytes);
+
+	if(fr == FR_OK)
+		printf("Wrote out %i bytes", bytes);
+	else
+		printf("Failed to write");
+
+	f_close(&fil);
   /* USER CODE END 2 */
-
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
-  /* USER CODE END RTOS_MUTEX */
-
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
-  /* USER CODE END RTOS_SEMAPHORES */
-
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  /* USER CODE END RTOS_TIMERS */
-
-  /* Create the thread(s) */
-  /* definition and creation of radioHandler */
-  osThreadDef(radioHandler, startRadioHandler, osPriorityNormal, 0, 128);
-  radioHandlerHandle = osThreadCreate(osThread(radioHandler), NULL);
-
-  /* definition and creation of SDCardLogger */
-  //osThreadDef(SDCardLogger, startSDCardLogger, osPriorityIdle, 0, 128);
-  //SDCardLoggerHandle = osThreadCreate(osThread(SDCardLogger), NULL);
-
-  /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
-  /* USER CODE END RTOS_THREADS */
-
-  /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
-  /* USER CODE END RTOS_QUEUES */
- 
-
-  /* Start scheduler */
-  osKernelStart();
-  
-  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -221,14 +251,14 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.MSIState = RCC_MSI_ON;
   RCC_OscInitStruct.MSICalibrationValue = 0;
-  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_11;
+  RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_6;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
-  RCC_OscInitStruct.PLL.PLLM = 3;
-  RCC_OscInitStruct.PLL.PLLN = 18;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 1;
+  RCC_OscInitStruct.PLL.PLLN = 9;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
-  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV6;
-  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
+  RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV8;
+  RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV2;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -251,15 +281,14 @@ void SystemClock_Config(void)
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
                               |RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_I2C1
                               |RCC_PERIPHCLK_I2C2|RCC_PERIPHCLK_DFSDM1
-                              |RCC_PERIPHCLK_USB|RCC_PERIPHCLK_SDMMC1;
+                              |RCC_PERIPHCLK_SDMMC1;
   PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_HSI;
   PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_HSI;
-  PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_PCLK1;
+  PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
   PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL;
-  PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_PLL;
+  PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     _Error_Handler(__FILE__, __LINE__);
@@ -291,7 +320,7 @@ void SystemClock_Config(void)
   HAL_RCCEx_EnableMSIPLLMode();
 
   /* SysTick_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(SysTick_IRQn, 15, 0);
+  HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -323,7 +352,7 @@ static void MX_I2C1_Init(void)
 {
 
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00702681;
+  hi2c1.Init.Timing = 0x0010061A;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -417,7 +446,7 @@ static void MX_SDMMC1_SD_Init(void)
   hsd1.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
   hsd1.Init.BusWide = SDMMC_BUS_WIDE_1B;
   hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd1.Init.ClockDiv = 0;
+  hsd1.Init.ClockDiv = 118;
 
 }
 
@@ -488,12 +517,6 @@ static void MX_USART3_UART_Init(void)
 
 }
 
-/* USB_OTG_FS init function */
-static void MX_USB_OTG_FS_USB_Init(void)
-{
-
-}
-
 /** 
   * Enable DMA controller clock
   * Configure DMA for memory to memory transfers
@@ -502,8 +525,8 @@ static void MX_USB_OTG_FS_USB_Init(void)
 static void MX_DMA_Init(void) 
 {
   /* DMA controller clock enable */
-  __HAL_RCC_DMA2_CLK_ENABLE();
   __HAL_RCC_DMA1_CLK_ENABLE();
+  __HAL_RCC_DMA2_CLK_ENABLE();
 
   /* Configure DMA request hdma_memtomem_dma1_channel1 on DMA1_Channel1 */
   hdma_memtomem_dma1_channel1.Instance = DMA1_Channel1;
@@ -524,22 +547,19 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
   /* DMA1_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
   /* DMA2_Channel3_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel3_IRQn);
-  /* DMA2_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA2_Channel4_IRQn);
   /* DMA2_Channel5_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Channel5_IRQn, 5, 0);
+  HAL_NVIC_SetPriority(DMA2_Channel5_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Channel5_IRQn);
 
 }
@@ -551,9 +571,6 @@ static void MX_DMA_Init(void)
         * EVENT_OUT
         * EXTI
      PA2   ------> RCC_LSCO
-     PA10   ------> USB_OTG_FS_ID
-     PA11   ------> USB_OTG_FS_DM
-     PA12   ------> USB_OTG_FS_DP
 */
 static void MX_GPIO_Init(void)
 {
@@ -575,11 +592,11 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(PMIC_FAST_GPIO_Port, PMIC_FAST_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : SD_CD_Pin RADIO_DIO_4_Pin RADIO_DIO_5_Pin */
-  GPIO_InitStruct.Pin = SD_CD_Pin|RADIO_DIO_4_Pin|RADIO_DIO_5_Pin;
+  /*Configure GPIO pin : SD_CD_Pin */
+  GPIO_InitStruct.Pin = SD_CD_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(SD_CD_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : LED_2_Pin LED_1_Pin */
   GPIO_InitStruct.Pin = LED_2_Pin|LED_1_Pin;
@@ -619,6 +636,12 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
+  /*Configure GPIO pins : RADIO_DIO_4_Pin RADIO_DIO_5_Pin */
+  GPIO_InitStruct.Pin = RADIO_DIO_4_Pin|RADIO_DIO_5_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PMIC_FAST_Pin */
   GPIO_InitStruct.Pin = PMIC_FAST_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -626,49 +649,11 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(PMIC_FAST_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PA10 PA11 PA12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_10|GPIO_PIN_11|GPIO_PIN_12;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF10_OTG_FS;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
 }
 
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-
-/* startRadioHandler function */
-void startRadioHandler(void const * argument)
-{
-  /* init code for FATFS */
-  //MX_FATFS_Init();
-  HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
-
-  /* USER CODE BEGIN 5 */
-  /* Infinite loop */
-  for(;;)
-  {
-	HAL_GPIO_TogglePin(LED_1_GPIO_Port, LED_1_Pin);
-	HAL_GPIO_TogglePin(LED_2_GPIO_Port, LED_2_Pin);
-    osDelay(500);
-  }
-  /* USER CODE END 5 */ 
-}
-
-/* startSDCardLogger function */
-void startSDCardLogger(void const * argument)
-{
-  /* USER CODE BEGIN startSDCardLogger */
-  /* Infinite loop */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END startSDCardLogger */
-}
 
 /**
   * @brief  Period elapsed callback in non blocking mode
