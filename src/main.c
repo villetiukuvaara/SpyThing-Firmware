@@ -104,7 +104,8 @@ static void MX_I2C1_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
-
+uint8_t tx_buffer[32];
+uint8_t tx_size = 0;
 /* USER CODE END 0 */
 
 int main(void)
@@ -132,17 +133,17 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_DMA_Init();
-  MX_SDMMC1_SD_Init();
-  MX_DFSDM1_Init();
+  //MX_DMA_Init();
+  //MX_SDMMC1_SD_Init();
+  //MX_DFSDM1_Init();
   MX_USART3_UART_Init();
   MX_UART4_Init();
-  MX_RTC_Init();
-  MX_SPI1_Init();
-  MX_USB_OTG_FS_USB_Init();
-  MX_I2C2_Init();
-  MX_FATFS_Init();
-  MX_I2C1_Init();
+  //MX_RTC_Init();
+  //MX_SPI1_Init();
+  //MX_USB_OTG_FS_USB_Init();
+  //MX_I2C2_Init();
+  //MX_FATFS_Init();
+  //MX_I2C1_Init();
 
   /* USER CODE BEGIN 2 */
   RetargetInit(&huart4);
@@ -151,11 +152,21 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+  uint8_t gps_buf;
+
+  //uint16_t size;
+
+  HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_SET);
+  printf("Starting GPS demo...\n");
+
   while (1)
   {
   /* USER CODE END WHILE */
-
-
+	  if(HAL_UART_Receive(&huart3, &gps_buf, 1, 1000) == HAL_OK)
+		  printf("%c", gps_buf);
+	  else
+		  printf("TIMEOUT\n");
   /* USER CODE BEGIN 3 */
 
   }
