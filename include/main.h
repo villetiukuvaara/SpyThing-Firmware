@@ -55,7 +55,6 @@
 /* USER CODE END Includes */
 
 /* Private define ------------------------------------------------------------*/
-#define GPS_I2C_ADDR 0x42
 
 #define SD_CD_Pin GPIO_PIN_13
 #define SD_CD_GPIO_Port GPIOC
@@ -63,6 +62,8 @@
 #define LED_2_GPIO_Port GPIOC
 #define LED_1_Pin GPIO_PIN_1
 #define LED_1_GPIO_Port GPIOC
+#define SWITCH_1_Pin GPIO_PIN_3
+#define SWITCH_1_GPIO_Port GPIOC
 #define DEBUG_UART_TX_Pin GPIO_PIN_0
 #define DEBUG_UART_TX_GPIO_Port GPIOA
 #define DEBUG_UART_RX_Pin GPIO_PIN_1
@@ -97,10 +98,10 @@
 #define GPS_RESET_N_GPIO_Port GPIOB
 #define RADIO_RESET_N_Pin GPIO_PIN_5
 #define RADIO_RESET_N_GPIO_Port GPIOB
-#define RADIO_I2C_SCL_Pin GPIO_PIN_6
-#define RADIO_I2C_SCL_GPIO_Port GPIOB
-#define RADIO_I2C_SDA_Pin GPIO_PIN_7
-#define RADIO_I2C_SDA_GPIO_Port GPIOB
+#define GPS_I2C_SCL_Pin GPIO_PIN_6
+#define GPS_I2C_SCL_GPIO_Port GPIOB
+#define GPS_I2C_SDA_Pin GPIO_PIN_7
+#define GPS_I2C_SDA_GPIO_Port GPIOB
 #define RADIO_DIO_0_Pin GPIO_PIN_8
 #define RADIO_DIO_0_GPIO_Port GPIOB
 #define RADIO_DIO_1_Pin GPIO_PIN_9
