@@ -1,10 +1,14 @@
 /**
   ******************************************************************************
-  * @file    stm32l4xx_it.h
+  * @file    FatFs/FatFs_uSD/Inc/stm32l4xx_it.h
+  * @author  MCD Application Team
+  * @version V1.8.0
+  * @date    21-April-2017
   * @brief   This file contains the headers of the interrupt handlers.
   ******************************************************************************
+  * @attention
   *
-  * COPYRIGHT(c) 2017 STMicroelectronics
+  * <h2><center>&copy; COPYRIGHT(c) 2017 STMicroelectronics</center></h2>
   *
   * Redistribution and use in source and binary forms, with or without modification,
   * are permitted provided that the following conditions are met:
@@ -36,8 +40,8 @@
 #define __STM32L4xx_IT_H
 
 #ifdef __cplusplus
- extern "C" {
-#endif 
+extern "C" {
+#endif
 
 /* Includes ------------------------------------------------------------------*/
 /* Exported types ------------------------------------------------------------*/
@@ -45,21 +49,15 @@
 /* Exported macro ------------------------------------------------------------*/
 /* Exported functions ------------------------------------------------------- */
 
+void NMI_Handler(void);
+void HardFault_Handler(void);
+void MemManage_Handler(void);
+void BusFault_Handler(void);
+void UsageFault_Handler(void);
 void SVC_Handler(void);
+void DebugMon_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
-void DMA1_Channel3_IRQHandler(void);
-void DMA1_Channel4_IRQHandler(void);
-void DMA1_Channel6_IRQHandler(void);
-void DMA1_Channel7_IRQHandler(void);
-void TIM1_UP_TIM16_IRQHandler(void);
-void I2C1_EV_IRQHandler(void);
-void I2C1_ER_IRQHandler(void);
-void SDMMC1_IRQHandler(void);
-void UART4_IRQHandler(void);
-void DMA2_Channel3_IRQHandler(void);
-void DMA2_Channel5_IRQHandler(void);
-
 #ifdef __cplusplus
 }
 #endif

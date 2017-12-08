@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
-  * @file   fatfs.h
-  * @brief  Header for fatfs applications
+  * @file   fatfs.c
+  * @brief  Code for fatfs applications
   ******************************************************************************
   * This notice applies to any and all portions of this file
   * that are not between comment pairs USER CODE BEGIN and
@@ -46,32 +46,39 @@
   ******************************************************************************
   */
 
-/* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __fatfs_H
-#define __fatfs_H
-#ifdef __cplusplus
- extern "C" {
-#endif
+#include "fatfs.h"
 
-#include "ff.h"
-#include "ff_gen_drv.h"
-#include "sd_diskio.h" /* defines SD_Driver as external */
+uint8_t retSD;    /* Return value for SD */
+char SD_Path[4] = "0:";  /* SD logical drive path */
 
-/* USER CODE BEGIN Includes */
+/* USER CODE BEGIN Variables */
 
-/* USER CODE END Includes */
+/* USER CODE END Variables */    
 
-extern uint8_t retSD; /* Return value for SD */
-extern char SD_Path[4]; /* SD logical drive path */
+void MX_FATFS_Init(void) 
+{
+  /*## FatFS: Link the SD driver ###########################*/
+  retSD = FATFS_LinkDriver(&SD_Driver, SD_Path);
 
-void MX_FATFS_Init(void);
-
-/* USER CODE BEGIN Prototypes */
-
-/* USER CODE END Prototypes */
-#ifdef __cplusplus
+  /* USER CODE BEGIN Init */
+  /* additional user code for init */     
+  /* USER CODE END Init */
 }
-#endif
-#endif /*__fatfs_H */
+
+/**
+  * @brief  Gets Time from RTC 
+  * @param  None
+  * @retval Time in DWORD
+  */
+DWORD get_fattime(void)
+{
+  /* USER CODE BEGIN get_fattime */
+  return 0;
+  /* USER CODE END get_fattime */  
+}
+
+/* USER CODE BEGIN Application */
+     
+/* USER CODE END Application */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
