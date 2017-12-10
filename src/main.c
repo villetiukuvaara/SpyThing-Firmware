@@ -48,6 +48,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "logger.h"
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
@@ -72,7 +73,7 @@ int main(void)
 {
 	FRESULT res;                                          /* FatFs function common result code */
 	uint32_t byteswritten, bytesread;                     /* File write/read counts */
-	uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
+	//uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
 	uint8_t rtext[100];                                   /* File read buffer */
 
 	/* STM32L4xx HAL library initialization:
@@ -121,7 +122,7 @@ int main(void)
 			else
 			{
 				/*##-4- Create and Open a new text file object with write access #####*/
-				if(f_open(&MyFile, "STM32.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+				if(f_open(&MyFile, "AUDIO.WAV", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
 				{
 					/* 'STM32.TXT' file Open for write Error */
 					Error_Handler();
@@ -129,7 +130,17 @@ int main(void)
 				else
 				{
 					/*##-5- Write data to the text file ################################*/
-					res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+					//res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+					wave_sample_t samples_0[] = {0x1122, 0x3344};
+					wave_sample_t samples_1[] = {0x5566, 0x7788};
+					wave_sample_t* samples[2];
+					samples[0] = samples_0;
+					samples[1] = samples_1;
+
+					logger_wav_write_header(&MyFile, 22050, 2, 512);
+					res = logger_wav_append_nchannels(&MyFile, 2, 2, samples);
+
+					byteswritten = f_tell(&MyFile);
 
 					/*##-6- Close the open text file #################################*/
 					if (f_close(&MyFile) != FR_OK )
@@ -145,7 +156,7 @@ int main(void)
 					else
 					{
 						/*##-7- Open the text file object with read access ###############*/
-						if(f_open(&MyFile, "STM32.TXT", FA_READ) != FR_OK)
+						if(f_open(&MyFile, "AUDIO.WAV", FA_READ) != FR_OK)
 						{
 							/* 'STM32.TXT' file Open for read Error */
 							Error_Handler();
