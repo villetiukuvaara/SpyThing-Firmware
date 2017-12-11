@@ -9,7 +9,6 @@
 #define LOGGER_H_
 
 #include "ff_gen_drv.h"
-#include "sd_diskio.h"
 #include "stdbool.h"
 
 typedef uint16_t wave_sample_t;
