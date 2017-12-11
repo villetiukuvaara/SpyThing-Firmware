@@ -1,7 +1,7 @@
 /**
   ******************************************************************************
-  * File Name          : main.h
-  * Description        : This file contains the common defines of the application
+  * @file   fatfs.h
+  * @brief  Header for fatfs applications
   ******************************************************************************
   * This notice applies to any and all portions of this file
   * that are not between comment pairs USER CODE BEGIN and
@@ -45,84 +45,34 @@
   *
   ******************************************************************************
   */
+
 /* Define to prevent recursive inclusion -------------------------------------*/
-#ifndef __MAIN_H
-#define __MAIN_H
-  /* Includes ------------------------------------------------------------------*/
+#ifndef __fatfs_H
+#define __fatfs_H
+#ifdef __cplusplus
+ extern "C" {
+#endif
+
+#include "ff.h"
+#include "ff_gen_drv.h"
+//#include "sd_diskio.h" /* defines SD_Driver as external */
+#include "sdcard_diskio.h"
 
 /* USER CODE BEGIN Includes */
 
 /* USER CODE END Includes */
 
-/* Private define ------------------------------------------------------------*/
+extern uint8_t retSD; /* Return value for SD */
+extern char SD_Path[4]; /* SD logical drive path */
 
-#define SD_CD_Pin GPIO_PIN_13
-#define SD_CD_GPIO_Port GPIOC
-#define LED_2_Pin GPIO_PIN_0
-#define LED_2_GPIO_Port GPIOC
-#define LED_1_Pin GPIO_PIN_1
-#define LED_1_GPIO_Port GPIOC
-#define SWITCH_1_Pin GPIO_PIN_3
-#define SWITCH_1_GPIO_Port GPIOC
-#define DEBUG_UART_TX_Pin GPIO_PIN_0
-#define DEBUG_UART_TX_GPIO_Port GPIOA
-#define DEBUG_UART_RX_Pin GPIO_PIN_1
-#define DEBUG_UART_RX_GPIO_Port GPIOA
-#define SWITCH_2_Pin GPIO_PIN_3
-#define SWITCH_2_GPIO_Port GPIOA
-#define GPS_UART_TX_Pin GPIO_PIN_4
-#define GPS_UART_TX_GPIO_Port GPIOC
-#define GPS_UART_RX_Pin GPIO_PIN_5
-#define GPS_UART_RX_GPIO_Port GPIOC
-#define GPS_EXTINT_Pin GPIO_PIN_2
-#define GPS_EXTINT_GPIO_Port GPIOB
-#define RADIO_DIO_2_Pin GPIO_PIN_10
-#define RADIO_DIO_2_GPIO_Port GPIOB
-#define RADIO_DIO_3_Pin GPIO_PIN_11
-#define RADIO_DIO_3_GPIO_Port GPIOB
-#define VUSB_DET_Pin GPIO_PIN_12
-#define VUSB_DET_GPIO_Port GPIOB
-#define PMIC_I2C_SCL_Pin GPIO_PIN_13
-#define PMIC_I2C_SCL_GPIO_Port GPIOB
-#define PMIC_I2C_SDA_Pin GPIO_PIN_14
-#define PMIC_I2C_SDA_GPIO_Port GPIOB
-#define GPS_TIMEPULSE_Pin GPIO_PIN_15
-#define GPS_TIMEPULSE_GPIO_Port GPIOB
-#define RADIO_DIO_4_Pin GPIO_PIN_6
-#define RADIO_DIO_4_GPIO_Port GPIOC
-#define RADIO_DIO_5_Pin GPIO_PIN_7
-#define RADIO_DIO_5_GPIO_Port GPIOC
-#define PMIC_FAST_Pin GPIO_PIN_9
-#define PMIC_FAST_GPIO_Port GPIOA
-#define GPS_RESET_N_Pin GPIO_PIN_4
-#define GPS_RESET_N_GPIO_Port GPIOB
-#define RADIO_RESET_N_Pin GPIO_PIN_5
-#define RADIO_RESET_N_GPIO_Port GPIOB
-#define GPS_I2C_SCL_Pin GPIO_PIN_6
-#define GPS_I2C_SCL_GPIO_Port GPIOB
-#define GPS_I2C_SDA_Pin GPIO_PIN_7
-#define GPS_I2C_SDA_GPIO_Port GPIOB
-#define RADIO_DIO_0_Pin GPIO_PIN_8
-#define RADIO_DIO_0_GPIO_Port GPIOB
-#define RADIO_DIO_1_Pin GPIO_PIN_9
-#define RADIO_DIO_1_GPIO_Port GPIOB
+void MX_FATFS_Init(void);
 
-/* USER CODE BEGIN Private defines */
+/* USER CODE BEGIN Prototypes */
 
-/* USER CODE END Private defines */
+/* USER CODE END Prototypes */
+#ifdef __cplusplus
+}
+#endif
+#endif /*__fatfs_H */
 
-void _Error_Handler(char *, int);
-void Error_Handler(void);
-
-#define Error_Handler() _Error_Handler(__FILE__, __LINE__)
-
-/**
-  * @}
-  */ 
-
-/**
-  * @}
-*/ 
-
-#endif /* __MAIN_H */
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/

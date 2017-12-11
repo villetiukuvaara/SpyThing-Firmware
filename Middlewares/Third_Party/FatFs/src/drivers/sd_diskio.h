@@ -1,16 +1,14 @@
 /**
   ******************************************************************************
-  * @file   fatfs.c
-  * @brief  Code for fatfs applications
+  * @file    sd_diskio.h 
+  * @author  MCD Application Team
+  * @version V1.4.1
+  * @date    14-February-2017
+  * @brief   Header for sd_diskio.c module
   ******************************************************************************
-  * This notice applies to any and all portions of this file
-  * that are not between comment pairs USER CODE BEGIN and
-  * USER CODE END. Other portions of this file, whether 
-  * inserted by the user or by software development tools
-  * are owned by their respective copyright owners.
+  * @attention
   *
-  * Copyright (c) 2017 STMicroelectronics International N.V. 
-  * All rights reserved.
+  * <h2><center>&copy; COPYRIGHT 2017 STMicroelectronics</center></h2>
   *
   * Redistribution and use in source and binary forms, with or without 
   * modification, are permitted, provided that the following conditions are met:
@@ -46,39 +44,17 @@
   ******************************************************************************
   */
 
-#include "fatfs.h"
+/* Define to prevent recursive inclusion -------------------------------------*/
+#ifndef __SD_DISKIO_H
+#define __SD_DISKIO_H
 
-uint8_t retSD;    /* Return value for SD */
-char SD_Path[4] = "0:";  /* SD logical drive path */
+/* Includes ------------------------------------------------------------------*/
+/* Exported types ------------------------------------------------------------*/
+/* Exported constants --------------------------------------------------------*/
+/* Exported functions ------------------------------------------------------- */
+extern Diskio_drvTypeDef  SD_Driver;
 
-/* USER CODE BEGIN Variables */
-
-/* USER CODE END Variables */    
-
-void MX_FATFS_Init(void) 
-{
-  /*## FatFS: Link the SD driver ###########################*/
-  retSD = FATFS_LinkDriver(&SD_Driver, SD_Path);
-
-  /* USER CODE BEGIN Init */
-  /* additional user code for init */     
-  /* USER CODE END Init */
-}
-
-/**
-  * @brief  Gets Time from RTC 
-  * @param  None
-  * @retval Time in DWORD
-  */
-DWORD get_fattime(void)
-{
-  /* USER CODE BEGIN get_fattime */
-  return 0;
-  /* USER CODE END get_fattime */  
-}
-
-/* USER CODE BEGIN Application */
-     
-/* USER CODE END Application */
+#endif /* __SD_DISKIO_H */
 
 /************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
+

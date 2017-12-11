@@ -45,7 +45,7 @@
   *
   ******************************************************************************
   */
-//#define BUS_4BITS 1
+#define BUS_4BITS 1
 
 #ifdef OLD_API
 /* kept to avoid issue when migrating old projects. */
