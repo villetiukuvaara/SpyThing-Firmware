@@ -131,7 +131,7 @@ int main(void)
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	//MX_DMA_Init();
+	MX_DMA_Init();
 	MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
 	//MX_USART3_UART_Init();
@@ -501,8 +501,8 @@ static void MX_SDMMC1_SD_Init(void)
 	hsd1.Init.ClockBypass = SDMMC_CLOCK_BYPASS_DISABLE;
 	hsd1.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
 	hsd1.Init.BusWide = SDMMC_BUS_WIDE_1B;
-	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
-	hsd1.Init.ClockDiv = 0;
+	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
+	hsd1.Init.ClockDiv = SDMMC_TRANSFER_CLK_DIV;
 
 }
 
