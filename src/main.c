@@ -49,6 +49,8 @@
 #include "main.h"
 #include "stm32l4xx_hal.h"
 #include "fatfs.h"
+#include "audio_hal.h"
+#include "retarget.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -77,6 +79,9 @@ DMA_HandleTypeDef hdma_uart4_tx;
 DMA_HandleTypeDef hdma_usart3_rx;
 
 DMA_HandleTypeDef hdma_memtomem_dma1_channel1;
+
+USBD_HandleTypeDef hUSBDDevice;
+extern USBD_AUDIO_ItfTypeDef  USBD_AUDIO_fops;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -120,6 +125,10 @@ int main(void)
 
 	/* USER CODE BEGIN Init */
 
+	// Copied from audio streaming demo:
+	__HAL_RCC_PWR_CLK_ENABLE();
+	HAL_PWREx_EnableVddUSB();
+
 	/* USER CODE END Init */
 
 	/* Configure the system clock */
@@ -130,12 +139,12 @@ int main(void)
 	/* USER CODE END SysInit */
 
 	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_DMA_Init();
-	MX_SDMMC1_SD_Init();
+	//MX_GPIO_Init();
+	//MX_DMA_Init();
+	//MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
 	//MX_USART3_UART_Init();
-	//MX_UART4_Init();
+	MX_UART4_Init();
 	//MX_RTC_Init();
 	//MX_SPI1_Init();
 	//MX_USB_OTG_FS_USB_Init();
@@ -143,109 +152,31 @@ int main(void)
 	//MX_FATFS_Init();
 	//MX_I2C1_Init();
 
-	FATFS SDFatFs;  /* File system object for SD card logical drive */
-	FIL MyFile;     /* File object */
-	//char SDPath[4]; /* SD card logical drive path */
+	RetargetInit(&huart4);
+	printf("Starting up...\n");
 
-	FRESULT res;                                          /* FatFs function common result code */
-	uint32_t byteswritten, bytesread;                     /* File write/read counts */
-	uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
-	uint8_t rtext[100];                                   /* File read buffer */
+	USBD_AUDIO_Init_Microphone_Descriptor(&hUSBDDevice, AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS);
+	/* Init Device Library */
+	USBD_Init(&hUSBDDevice, &AUDIO_Desc, 0);
+	/* Add Supported Class */
+	USBD_RegisterClass(&hUSBDDevice, &USBD_AUDIO);
+	/* Add Interface callbacks for AUDIO Class */
+	USBD_AUDIO_RegisterInterface(&hUSBDDevice, &USBD_AUDIO_fops);
+	/* Start Device Process */
+	USBD_Start(&hUSBDDevice);
+	/* Start audio acquisition and streaming */
 
-	/*##-1- Link the micro SD disk I/O driver ##################################*/
-	if(FATFS_LinkDriver(&SD_Driver, SD_Path) == 0)
-	{
-		/*##-2- Register the file system object to the FatFs module ##############*/
-		if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK)
-		{
-			/* FatFs Initialization Error */
-			Error_Handler();
-		}
-		else
-		{
-			/*##-3- Create a FAT file system (format) on the logical drive #########*/
-			/* WARNING: Formatting the uSD card will delete all content on the device */
-			if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK)
-			{
-				/* FatFs Format Error */
-				Error_Handler();
-			}
-			else
-			{
-				/*##-4- Create and Open a new text file object with write access #####*/
-				if(f_open(&MyFile, "STM32.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
-				{
-					/* 'STM32.TXT' file Open for write Error */
-					Error_Handler();
-				}
-				else
-				{
-					/*##-5- Write data to the text file ################################*/
-					res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+	printf("USB started\n");
 
-					/*##-6- Close the open text file #################################*/
-					if (f_close(&MyFile) != FR_OK )
-					{
-						Error_Handler();
-					}
+	Init_Acquisition_Peripherals(AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS, 0);
 
-					if((byteswritten == 0) || (res != FR_OK))
-					{
-						/* 'STM32.TXT' file Write or EOF Error */
-						Error_Handler();
-					}
-					else
-					{
-						/*##-7- Open the text file object with read access ###############*/
-						if(f_open(&MyFile, "STM32.TXT", FA_READ) != FR_OK)
-						{
-							/* 'STM32.TXT' file Open for read Error */
-							Error_Handler();
-						}
-						else
-						{
-							/*##-8- Read data from the text file ###########################*/
-							res = f_read(&MyFile, rtext, sizeof(rtext), (UINT*)&bytesread);
+	printf("acquisition peripherals started\n");
 
-							if((bytesread == 0) || (res != FR_OK))
-							{
-								/* 'STM32.TXT' file Read or EOF Error */
-								Error_Handler();
-							}
-							else
-							{
-								/*##-9- Close the open text file #############################*/
-								f_close(&MyFile);
+	Start_Acquisition();
 
-								/*##-10- Compare read data with the expected data ############*/
-								if((bytesread != byteswritten))
-								{
-									/* Read data is different from the expected data */
-									Error_Handler();
-								}
-								else
-								{
-									/* Success of the demo: no error occurrence */
-									//BSP_LED_On(LED2);
-									HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
+	printf("acquisition started\n");
 
-	/*##-11- Unlink the RAM disk I/O driver ####################################*/
-	FATFS_UnLinkDriver(SD_Path);
-
-
-	/* Infinite loop */
-	while (1)
-	{
-	}
-
+	while(1);
 }
 
 /** System Clock Configuration
@@ -253,103 +184,105 @@ int main(void)
 void SystemClock_Config(void)
 {
 
-	RCC_OscInitTypeDef RCC_OscInitStruct;
-	RCC_ClkInitTypeDef RCC_ClkInitStruct;
-	RCC_PeriphCLKInitTypeDef PeriphClkInit;
+		RCC_OscInitTypeDef RCC_OscInitStruct;
+		RCC_ClkInitTypeDef RCC_ClkInitStruct;
+		RCC_PeriphCLKInitTypeDef PeriphClkInit;
 
-	/**Configure LSE Drive Capability
-	 */
-	__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+		/**Configure LSE Drive Capability
+		 */
+		__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
-	/**Initializes the CPU, AHB and APB busses clocks
-	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
-			|RCC_OSCILLATORTYPE_MSI;
-	RCC_OscInitStruct.LSEState = RCC_LSE_ON;
-	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-	RCC_OscInitStruct.HSICalibrationValue = 16;
-	RCC_OscInitStruct.MSIState = RCC_MSI_ON;
-	RCC_OscInitStruct.MSICalibrationValue = 0;
-	RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_11;
-	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
-	RCC_OscInitStruct.PLL.PLLM = 6;
-	RCC_OscInitStruct.PLL.PLLN = 40;
-	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
-	RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV4;
-	RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
-	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-	{
-		_Error_Handler(__FILE__, __LINE__);
-	}
+		/**Initializes the CPU, AHB and APB busses clocks
+		 */
+		RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
+				|RCC_OSCILLATORTYPE_MSI;
+		RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+		RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+		RCC_OscInitStruct.HSICalibrationValue = 16;
+		RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+		RCC_OscInitStruct.MSICalibrationValue = 0;
+		RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_11;
+		RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+		RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+		RCC_OscInitStruct.PLL.PLLM = 6;
+		RCC_OscInitStruct.PLL.PLLN = 40;
+		RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
+		RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV4;
+		RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
+		if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
 
-	/**Initializes the CPU, AHB and APB busses clocks
-	 */
-	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-			|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+		HAL_RCCEx_DisableLSECSS();
 
-	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
-	{
-		_Error_Handler(__FILE__, __LINE__);
-	}
+		/**Initializes the CPU, AHB and APB busses clocks
+		 */
+		RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+				|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+		RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+		RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+		RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+		RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-	PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
-			|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
-			|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
-			|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
-			|RCC_PERIPHCLK_SDMMC1;
-	PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_HSI;
-	PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_HSI;
-	PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
-	PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
-	PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
-	PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
-	PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
-	PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
-	PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
-	PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
-	PeriphClkInit.PLLSAI1.PLLSAI1M = 6;
-	PeriphClkInit.PLLSAI1.PLLSAI1N = 43;
-	PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
-	PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV8;
-	PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
-	PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK;
-	if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-	{
-		_Error_Handler(__FILE__, __LINE__);
-	}
+		if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
 
-	HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
+		PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
+				|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
+				|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
+				|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
+				|RCC_PERIPHCLK_SDMMC1;
+		PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_HSI;
+		PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_HSI;
+		PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
+		PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
+		PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
+		PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
+		PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+		PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
+		PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
+		PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
+		PeriphClkInit.PLLSAI1.PLLSAI1M = 6;
+		PeriphClkInit.PLLSAI1.PLLSAI1N = 43;
+		PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
+		PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV8;
+		PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
+		PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK;
+		if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
 
-	/**Enables the Clock Security System
-	 */
-	 HAL_RCCEx_EnableLSECSS();
+		HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
 
-	/**Configure the main internal regulator output voltage
-	 */
-	 if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-	 {
-		 _Error_Handler(__FILE__, __LINE__);
-	 }
+		/**Enables the Clock Security System
+		 */
+		HAL_RCCEx_EnableLSECSS();
 
-	 /**Configure the Systick interrupt time
-	  */
-	 HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
+		/**Configure the main internal regulator output voltage
+		 */
+		if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
 
-	 /**Configure the Systick
-	  */
-	 HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+		/**Configure the Systick interrupt time
+		 */
+		HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-	 /**Enable MSI Auto calibration
-	  */
-	 HAL_RCCEx_EnableMSIPLLMode();
+		/**Configure the Systick
+		 */
+		HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-	 /* SysTick_IRQn interrupt configuration */
-	 HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+		/**Enable MSI Auto calibration
+		 */
+		HAL_RCCEx_EnableMSIPLLMode();
+
+		/* SysTick_IRQn interrupt configuration */
+		HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -746,18 +679,18 @@ static void MX_GPIO_Init(void)
  * @param  htim : TIM handle
  * @retval None
  */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-	/* USER CODE BEGIN Callback 0 */
-
-	/* USER CODE END Callback 0 */
-	if (htim->Instance == TIM1) {
-		HAL_IncTick();
-	}
-	/* USER CODE BEGIN Callback 1 */
-
-	/* USER CODE END Callback 1 */
-}
+//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+//{
+//	/* USER CODE BEGIN Callback 0 */
+//
+//	/* USER CODE END Callback 0 */
+//	if (htim->Instance == TIM1) {
+//		HAL_IncTick();
+//	}
+//	/* USER CODE BEGIN Callback 1 */
+//
+//	/* USER CODE END Callback 1 */
+//}
 
 /**
  * @brief  This function is executed in case of error occurrence.
