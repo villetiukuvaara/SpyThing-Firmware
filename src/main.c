@@ -80,11 +80,11 @@ DMA_HandleTypeDef hdma_usart3_rx;
 
 DMA_HandleTypeDef hdma_memtomem_dma1_channel1;
 
-USBD_HandleTypeDef hUSBDDevice;
-extern USBD_AUDIO_ItfTypeDef  USBD_AUDIO_fops;
-
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
+
+USBD_HandleTypeDef hUSBDDevice;
+extern USBD_AUDIO_ItfTypeDef  USBD_AUDIO_fops;
 
 /* USER CODE END PV */
 
@@ -113,7 +113,6 @@ static void MX_I2C1_Init(void);
 
 int main(void)
 {
-
 	/* USER CODE BEGIN 1 */
 
 	/* USER CODE END 1 */
@@ -125,8 +124,7 @@ int main(void)
 
 	/* USER CODE BEGIN Init */
 
-	// Copied from audio streaming demo:
-	__HAL_RCC_PWR_CLK_ENABLE();
+	// Copied from audio streaming demo
 	HAL_PWREx_EnableVddUSB();
 
 	/* USER CODE END Init */
@@ -139,7 +137,7 @@ int main(void)
 	/* USER CODE END SysInit */
 
 	/* Initialize all configured peripherals */
-	//MX_GPIO_Init();
+	MX_GPIO_Init();
 	//MX_DMA_Init();
 	//MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
@@ -170,11 +168,11 @@ int main(void)
 
 	Init_Acquisition_Peripherals(AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS, 0);
 
-	printf("acquisition peripherals started\n");
+	printf("Acquisition peripherals initialized\n");
 
 	Start_Acquisition();
 
-	printf("acquisition started\n");
+	printf("Acquisition started\n");
 
 	while(1);
 }
@@ -184,105 +182,103 @@ int main(void)
 void SystemClock_Config(void)
 {
 
-		RCC_OscInitTypeDef RCC_OscInitStruct;
-		RCC_ClkInitTypeDef RCC_ClkInitStruct;
-		RCC_PeriphCLKInitTypeDef PeriphClkInit;
+	RCC_OscInitTypeDef RCC_OscInitStruct;
+	RCC_ClkInitTypeDef RCC_ClkInitStruct;
+	RCC_PeriphCLKInitTypeDef PeriphClkInit;
 
-		/**Configure LSE Drive Capability
-		 */
-		__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+	/**Configure LSE Drive Capability
+	 */
+	__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
-		/**Initializes the CPU, AHB and APB busses clocks
-		 */
-		RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
-				|RCC_OSCILLATORTYPE_MSI;
-		RCC_OscInitStruct.LSEState = RCC_LSE_ON;
-		RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-		RCC_OscInitStruct.HSICalibrationValue = 16;
-		RCC_OscInitStruct.MSIState = RCC_MSI_ON;
-		RCC_OscInitStruct.MSICalibrationValue = 0;
-		RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_11;
-		RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-		RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
-		RCC_OscInitStruct.PLL.PLLM = 6;
-		RCC_OscInitStruct.PLL.PLLN = 40;
-		RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
-		RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV4;
-		RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
-		if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-		{
-			_Error_Handler(__FILE__, __LINE__);
-		}
+	/**Initializes the CPU, AHB and APB busses clocks
+	 */
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
+			|RCC_OSCILLATORTYPE_MSI;
+	RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+	RCC_OscInitStruct.HSICalibrationValue = 16;
+	RCC_OscInitStruct.MSIState = RCC_MSI_ON;
+	RCC_OscInitStruct.MSICalibrationValue = 0;
+	RCC_OscInitStruct.MSIClockRange = RCC_MSIRANGE_11;
+	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_MSI;
+	RCC_OscInitStruct.PLL.PLLM = 6;
+	RCC_OscInitStruct.PLL.PLLN = 40;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV7;
+	RCC_OscInitStruct.PLL.PLLQ = RCC_PLLQ_DIV4;
+	RCC_OscInitStruct.PLL.PLLR = RCC_PLLR_DIV4;
+	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 
-		HAL_RCCEx_DisableLSECSS();
+	/**Initializes the CPU, AHB and APB busses clocks
+	 */
+	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+			|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
+	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
-		/**Initializes the CPU, AHB and APB busses clocks
-		 */
-		RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-				|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-		RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-		RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-		RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-		RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 
-		if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_4) != HAL_OK)
-		{
-			_Error_Handler(__FILE__, __LINE__);
-		}
+	PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
+			|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
+			|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
+			|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
+			|RCC_PERIPHCLK_SDMMC1;
+	PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_HSI;
+	PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_HSI;
+	PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
+	PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
+	PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
+	PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
+	PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+	PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
+	PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
+	PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
+	PeriphClkInit.PLLSAI1.PLLSAI1M = 6;
+	PeriphClkInit.PLLSAI1.PLLSAI1N = 43;
+	PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
+	PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV8;
+	PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
+	PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK;
+	if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 
-		PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
-				|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
-				|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
-				|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
-				|RCC_PERIPHCLK_SDMMC1;
-		PeriphClkInit.Usart3ClockSelection = RCC_USART3CLKSOURCE_HSI;
-		PeriphClkInit.Uart4ClockSelection = RCC_UART4CLKSOURCE_HSI;
-		PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
-		PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
-		PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
-		PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
-		PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
-		PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
-		PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
-		PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
-		PeriphClkInit.PLLSAI1.PLLSAI1M = 6;
-		PeriphClkInit.PLLSAI1.PLLSAI1N = 43;
-		PeriphClkInit.PLLSAI1.PLLSAI1P = RCC_PLLP_DIV7;
-		PeriphClkInit.PLLSAI1.PLLSAI1Q = RCC_PLLQ_DIV8;
-		PeriphClkInit.PLLSAI1.PLLSAI1R = RCC_PLLR_DIV2;
-		PeriphClkInit.PLLSAI1.PLLSAI1ClockOut = RCC_PLLSAI1_SAI1CLK;
-		if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
-		{
-			_Error_Handler(__FILE__, __LINE__);
-		}
+	HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
 
-		HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
+	/**Enables the Clock Security System
+	 */
+	 HAL_RCCEx_EnableLSECSS();
 
-		/**Enables the Clock Security System
-		 */
-		HAL_RCCEx_EnableLSECSS();
+	/**Configure the main internal regulator output voltage
+	 */
+	 if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+	 {
+		 _Error_Handler(__FILE__, __LINE__);
+	 }
 
-		/**Configure the main internal regulator output voltage
-		 */
-		if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-		{
-			_Error_Handler(__FILE__, __LINE__);
-		}
+	 /**Configure the Systick interrupt time
+	  */
+	 HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-		/**Configure the Systick interrupt time
-		 */
-		HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
+	 /**Configure the Systick
+	  */
+	 HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-		/**Configure the Systick
-		 */
-		HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+	 /**Enable MSI Auto calibration
+	  */
+	 HAL_RCCEx_EnableMSIPLLMode();
 
-		/**Enable MSI Auto calibration
-		 */
-		HAL_RCCEx_EnableMSIPLLMode();
-
-		/* SysTick_IRQn interrupt configuration */
-		HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+	 /* SysTick_IRQn interrupt configuration */
+	 HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -434,8 +430,8 @@ static void MX_SDMMC1_SD_Init(void)
 	hsd1.Init.ClockBypass = SDMMC_CLOCK_BYPASS_DISABLE;
 	hsd1.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
 	hsd1.Init.BusWide = SDMMC_BUS_WIDE_1B;
-	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
-	hsd1.Init.ClockDiv = SDMMC_TRANSFER_CLK_DIV;
+	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
+	hsd1.Init.ClockDiv = 0;
 
 }
 
@@ -670,27 +666,6 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
-
-/**
- * @brief  Period elapsed callback in non blocking mode
- * @note   This function is called  when TIM1 interrupt took place, inside
- * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
- * a global variable "uwTick" used as application time base.
- * @param  htim : TIM handle
- * @retval None
- */
-//void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-//{
-//	/* USER CODE BEGIN Callback 0 */
-//
-//	/* USER CODE END Callback 0 */
-//	if (htim->Instance == TIM1) {
-//		HAL_IncTick();
-//	}
-//	/* USER CODE BEGIN Callback 1 */
-//
-//	/* USER CODE END Callback 1 */
-//}
 
 /**
  * @brief  This function is executed in case of error occurrence.
