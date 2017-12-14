@@ -51,6 +51,7 @@
 #include "fatfs.h"
 #include "audio_hal.h"
 #include "retarget.h"
+#include "logger.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -124,9 +125,6 @@ int main(void)
 
 	/* USER CODE BEGIN Init */
 
-	// Copied from audio streaming demo
-	HAL_PWREx_EnableVddUSB();
-
 	/* USER CODE END Init */
 
 	/* Configure the system clock */
@@ -139,10 +137,10 @@ int main(void)
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
 	//MX_DMA_Init();
-	//MX_SDMMC1_SD_Init();
+	MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
 	//MX_USART3_UART_Init();
-	MX_UART4_Init();
+	//MX_UART4_Init();
 	//MX_RTC_Init();
 	//MX_SPI1_Init();
 	//MX_USB_OTG_FS_USB_Init();
@@ -150,31 +148,118 @@ int main(void)
 	//MX_FATFS_Init();
 	//MX_I2C1_Init();
 
-	RetargetInit(&huart4);
-	printf("Starting up...\n");
+	FATFS SDFatFs;  /* File system object for SD card logical drive */
+	FIL MyFile;     /* File object */
+	//char SDPath[4]; /* SD card logical drive path */
 
-	USBD_AUDIO_Init_Microphone_Descriptor(&hUSBDDevice, AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS);
-	/* Init Device Library */
-	USBD_Init(&hUSBDDevice, &AUDIO_Desc, 0);
-	/* Add Supported Class */
-	USBD_RegisterClass(&hUSBDDevice, &USBD_AUDIO);
-	/* Add Interface callbacks for AUDIO Class */
-	USBD_AUDIO_RegisterInterface(&hUSBDDevice, &USBD_AUDIO_fops);
-	/* Start Device Process */
-	USBD_Start(&hUSBDDevice);
-	/* Start audio acquisition and streaming */
+	FRESULT res;                                          /* FatFs function common result code */
+	uint32_t byteswritten, bytesread;                     /* File write/read counts */
+	uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
+	uint8_t rtext[100];                                   /* File read buffer */
 
-	printf("USB started\n");
+	/*##-1- Link the micro SD disk I/O driver ##################################*/
+	if(FATFS_LinkDriver(&SD_Driver, SD_Path) == 0)
+	{
+		/*##-2- Register the file system object to the FatFs module ##############*/
+		if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK)
+		{
+			/* FatFs Initialization Error */
+			Error_Handler();
+		}
+		else
+		{
+			/*##-3- Create a FAT file system (format) on the logical drive #########*/
+			/* WARNING: Formatting the uSD card will delete all content on the device */
+			if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK)
+			{
+				/* FatFs Format Error */
+				Error_Handler();
+			}
+			else
+			{
+				/*##-4- Create and Open a new text file object with write access #####*/
+				if(f_open(&MyFile, "audio.wav", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+				{
+					/* 'STM32.TXT' file Open for write Error */
+					Error_Handler();
+				}
+				else
+				{
+					/*##-5- Write data to the text file ################################*/
+					//res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+					wave_sample_t samples_0[] = {0x1122, 0x3344};
+					wave_sample_t samples_1[] = {0x5566, 0x7788};
+					wave_sample_t* samples[2];
+					samples[0] = samples_0;
+					samples[1] = samples_1;
 
-	Init_Acquisition_Peripherals(AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS, 0);
+					logger_wav_write_header(&MyFile, 22050, 2, 512);
+					res = logger_wav_append_nchannels(&MyFile, 2, 2, samples);
 
-	printf("Acquisition peripherals initialized\n");
+					byteswritten = f_tell(&MyFile);
 
-	Start_Acquisition();
+					/*##-6- Close the open text file #################################*/
+					if (f_close(&MyFile) != FR_OK )
+					{
+						Error_Handler();
+					}
 
-	printf("Acquisition started\n");
+					if((byteswritten == 0) || (res != FR_OK))
+					{
+						/* 'STM32.TXT' file Write or EOF Error */
+						Error_Handler();
+					}
+					else
+					{
+						/*##-7- Open the text file object with read access ###############*/
+						if(f_open(&MyFile, "audio.wav", FA_READ) != FR_OK)
+						{
+							/* 'STM32.TXT' file Open for read Error */
+							Error_Handler();
+						}
+						else
+						{
+							/*##-8- Read data from the text file ###########################*/
+							res = f_read(&MyFile, rtext, sizeof(rtext), (UINT*)&bytesread);
 
-	while(1);
+							if((bytesread == 0) || (res != FR_OK))
+							{
+								/* 'STM32.TXT' file Read or EOF Error */
+								Error_Handler();
+							}
+							else
+							{
+								/*##-9- Close the open text file #############################*/
+								f_close(&MyFile);
+
+								/*##-10- Compare read data with the expected data ############*/
+								if((bytesread != byteswritten))
+								{
+									/* Read data is different from the expected data */
+									Error_Handler();
+								}
+								else
+								{
+									/* Success of the demo: no error occurrence */
+									//BSP_LED_On(LED2);
+									HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	/*##-11- Unlink the RAM disk I/O driver ####################################*/
+	FATFS_UnLinkDriver(SD_Path);
+
+
+	/* Infinite loop */
+	while (1)
+	{
+	}
 }
 
 /** System Clock Configuration
@@ -256,29 +341,29 @@ void SystemClock_Config(void)
 
 	/**Enables the Clock Security System
 	 */
-	 HAL_RCCEx_EnableLSECSS();
+	HAL_RCCEx_EnableLSECSS();
 
 	/**Configure the main internal regulator output voltage
 	 */
-	 if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-	 {
-		 _Error_Handler(__FILE__, __LINE__);
-	 }
+	if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 
-	 /**Configure the Systick interrupt time
-	  */
-	 HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
+	/**Configure the Systick interrupt time
+	 */
+	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-	 /**Configure the Systick
-	  */
-	 HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+	/**Configure the Systick
+	 */
+	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-	 /**Enable MSI Auto calibration
-	  */
-	 HAL_RCCEx_EnableMSIPLLMode();
+	/**Enable MSI Auto calibration
+	 */
+	HAL_RCCEx_EnableMSIPLLMode();
 
-	 /* SysTick_IRQn interrupt configuration */
-	 HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+	/* SysTick_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -430,7 +515,7 @@ static void MX_SDMMC1_SD_Init(void)
 	hsd1.Init.ClockBypass = SDMMC_CLOCK_BYPASS_DISABLE;
 	hsd1.Init.ClockPowerSave = SDMMC_CLOCK_POWER_SAVE_DISABLE;
 	hsd1.Init.BusWide = SDMMC_BUS_WIDE_1B;
-	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_DISABLE;
+	hsd1.Init.HardwareFlowControl = SDMMC_HARDWARE_FLOW_CONTROL_ENABLE;
 	hsd1.Init.ClockDiv = 0;
 
 }
