@@ -64,28 +64,39 @@ DMA_HandleTypeDef hdma_dfsdm1_flt0;
 
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
-DMA_HandleTypeDef hdma_i2c1_rx;
-DMA_HandleTypeDef hdma_i2c1_tx;
 
 RTC_HandleTypeDef hrtc;
 
 SD_HandleTypeDef hsd1;
+DMA_HandleTypeDef hdma_sdmmc1_rx;
+DMA_HandleTypeDef hdma_sdmmc1_tx;
 
 SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart3;
-DMA_HandleTypeDef hdma_uart4_rx;
-DMA_HandleTypeDef hdma_uart4_tx;
-DMA_HandleTypeDef hdma_usart3_rx;
-
-DMA_HandleTypeDef hdma_memtomem_dma1_channel1;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-USBD_HandleTypeDef hUSBDDevice;
-extern USBD_AUDIO_ItfTypeDef  USBD_AUDIO_fops;
+#define N_MS N_MS_PER_INTERRUPT
+
+#define AUDIO_CHANNELS 1
+#define AUDIO_SAMPLING_FREQUENCY 32000
+
+#if (AUDIO_SAMPLING_FREQUENCY == 8000)
+#define MAX_DECIMATION_FACTOR 160
+#else
+#define MAX_DECIMATION_FACTOR 128
+#endif
+
+#define RECORD_TIME 1000
+#define SD_BUFFER_TIME 200
+
+int16_t PCM_Buffer[((AUDIO_CHANNELS*AUDIO_SAMPLING_FREQUENCY)/1000)  * N_MS ];
+//uint16_t PCM_SD_Buffers[((AUDIO_CHANNELS*AUDIO_SAMPLING_FREQUENCY)/1000)  * SD_BUFFER_TIME];
+bool audio_ready = false;
+uint16_t cnt1 = 0, cnt2 = 0;
 
 /* USER CODE END PV */
 
@@ -112,6 +123,102 @@ static void MX_I2C1_Init(void);
 
 /* USER CODE END 0 */
 
+void record_audio(FIL* file)
+{
+	// Preallocate 10 seconds of audio
+	FRESULT res = f_lseek(file, (AUDIO_SAMPLING_FREQUENCY/1000)*RECORD_TIME*3);
+	if(res != FR_OK)
+	{
+		Error_Handler();
+	}
+
+	res = f_lseek(file, 0);
+	if(res != FR_OK)
+	{
+		Error_Handler();
+	}
+
+	//Init_Acquisition_Peripherals(AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS, 0);
+	if(BSP_AUDIO_IN_Init(AUDIO_SAMPLING_FREQUENCY, 16, 1) != AUDIO_OK)
+		Error_Handler();
+
+	//Start_Acquisition();
+	if(BSP_AUDIO_IN_Record((uint16_t *)PCM_Buffer, 0) != AUDIO_OK)
+		Error_Handler();
+
+	uint32_t start = HAL_GetTick();
+
+	uint32_t samples = (AUDIO_SAMPLING_FREQUENCY/1000)*AUDIO_CHANNELS * N_MS;
+	uint32_t tot_samples = 0;
+	wave_sample_t* PCM_Buffer_arr[] = {PCM_Buffer};
+
+
+	HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, 1);
+	while(HAL_GetTick() < start + RECORD_TIME)
+	{
+		if(audio_ready)
+		{
+			//if(HAL_GetTick() > start + RECORD_TIME/2 && (cnt1 > 1 || cnt2 > 1)) Error_Handler();
+			cnt1 = 0;
+			cnt2 = 0;
+			audio_ready = false;
+			if(logger_wav_append_nchannels(file, 1, samples, PCM_Buffer_arr) != LOGGER_OK)
+			{
+				Error_Handler();
+			}
+			//memcpy(PCM_Buffer_2 + tot_samples, PCM_Buffer, samples*sizeof(wave_sample_t));
+			tot_samples += samples;
+			//if(audio_ready)
+			//	Error_Handler();
+		}
+	}
+	HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, 0);
+	BSP_AUDIO_IN_Stop();
+
+	//	wave_sample_t* PCM_Buffer_arr[] = {PCM_Buffer_2};
+	//	if(logger_wav_append_nchannels(file, 1, tot_samples, PCM_Buffer_arr) != LOGGER_OK)
+	//	{
+	//		Error_Handler();
+	//	}
+
+	if(logger_wav_write_header(file, AUDIO_SAMPLING_FREQUENCY, 1, tot_samples) != LOGGER_OK)
+	{
+		Error_Handler();
+	}
+
+	//while(1);
+}
+
+
+
+
+/**
+ * @brief  Half Transfer user callback, called by BSP functions.
+ * @param  None
+ * @retval None
+ */
+void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
+{
+	cnt1++;
+	audio_ready = true;
+}
+
+/**
+ * @brief  Transfer Complete user callback, called by BSP functions.
+ * @param  None
+ * @retval None
+ */
+void BSP_AUDIO_IN_TransferComplete_CallBack(void)
+{
+	cnt2++;
+	audio_ready = true;
+}
+
+void BSP_AUDIO_IN_Error_Callback(void)
+{
+	Error_Handler();
+}
+
 int main(void)
 {
 	/* USER CODE BEGIN 1 */
@@ -136,7 +243,7 @@ int main(void)
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	//MX_DMA_Init();
+	MX_DMA_Init();
 	MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
 	//MX_USART3_UART_Init();
@@ -186,15 +293,16 @@ int main(void)
 				else
 				{
 					/*##-5- Write data to the text file ################################*/
-					//res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
-					wave_sample_t samples_0[] = {0x1122, 0x3344};
-					wave_sample_t samples_1[] = {0x5566, 0x7788};
-					wave_sample_t* samples[2];
-					samples[0] = samples_0;
-					samples[1] = samples_1;
-
-					logger_wav_write_header(&MyFile, 22050, 2, 512);
-					res = logger_wav_append_nchannels(&MyFile, 2, 2, samples);
+					//					res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+					//					wave_sample_t samples_0[] = {0x1122, 0x3344};
+					//					wave_sample_t samples_1[] = {0x5566, 0x7788};
+					//					wave_sample_t* samples[2];
+					//					samples[0] = samples_0;
+					//					samples[1] = samples_1;
+					//
+					//					logger_wav_write_header(&MyFile, 22050, 2, 512);
+					//					res = logger_wav_append_nchannels(&MyFile, 2, 2, samples);
+					record_audio(&MyFile);
 
 					byteswritten = f_tell(&MyFile);
 
@@ -236,7 +344,7 @@ int main(void)
 								if((bytesread != byteswritten))
 								{
 									/* Read data is different from the expected data */
-									Error_Handler();
+									//Error_Handler();
 								}
 								else
 								{
@@ -341,29 +449,29 @@ void SystemClock_Config(void)
 
 	/**Enables the Clock Security System
 	 */
-	HAL_RCCEx_EnableLSECSS();
+	 HAL_RCCEx_EnableLSECSS();
 
 	/**Configure the main internal regulator output voltage
 	 */
-	if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-	{
-		_Error_Handler(__FILE__, __LINE__);
-	}
+	 if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+	 {
+		 _Error_Handler(__FILE__, __LINE__);
+	 }
 
-	/**Configure the Systick interrupt time
-	 */
-	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
+	 /**Configure the Systick interrupt time
+	  */
+	 HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-	/**Configure the Systick
-	 */
-	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+	 /**Configure the Systick
+	  */
+	 HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-	/**Enable MSI Auto calibration
-	 */
-	HAL_RCCEx_EnableMSIPLLMode();
+	 /**Enable MSI Auto calibration
+	  */
+	 HAL_RCCEx_EnableMSIPLLMode();
 
-	/* SysTick_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+	 /* SysTick_IRQn interrupt configuration */
+	 HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -595,8 +703,6 @@ static void MX_USB_OTG_FS_USB_Init(void)
 
 /** 
  * Enable DMA controller clock
- * Configure DMA for memory to memory transfers
- *   hdma_memtomem_dma1_channel1
  */
 static void MX_DMA_Init(void) 
 {
@@ -604,39 +710,13 @@ static void MX_DMA_Init(void)
 	__HAL_RCC_DMA1_CLK_ENABLE();
 	__HAL_RCC_DMA2_CLK_ENABLE();
 
-	/* Configure DMA request hdma_memtomem_dma1_channel1 on DMA1_Channel1 */
-	hdma_memtomem_dma1_channel1.Instance = DMA1_Channel1;
-	hdma_memtomem_dma1_channel1.Init.Request = DMA_REQUEST_0;
-	hdma_memtomem_dma1_channel1.Init.Direction = DMA_MEMORY_TO_MEMORY;
-	hdma_memtomem_dma1_channel1.Init.PeriphInc = DMA_PINC_ENABLE;
-	hdma_memtomem_dma1_channel1.Init.MemInc = DMA_MINC_ENABLE;
-	hdma_memtomem_dma1_channel1.Init.PeriphDataAlignment = DMA_PDATAALIGN_BYTE;
-	hdma_memtomem_dma1_channel1.Init.MemDataAlignment = DMA_MDATAALIGN_BYTE;
-	hdma_memtomem_dma1_channel1.Init.Mode = DMA_NORMAL;
-	hdma_memtomem_dma1_channel1.Init.Priority = DMA_PRIORITY_LOW;
-	if (HAL_DMA_Init(&hdma_memtomem_dma1_channel1) != HAL_OK)
-	{
-		_Error_Handler(__FILE__, __LINE__);
-	}
-
-
-
 	/* DMA interrupt init */
-	/* DMA1_Channel3_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
 	/* DMA1_Channel4_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+	HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 2, 0);
 	HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-	/* DMA1_Channel6_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
-	/* DMA1_Channel7_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
-	/* DMA2_Channel3_IRQn interrupt configuration */
-	HAL_NVIC_SetPriority(DMA2_Channel3_IRQn, 0, 0);
-	HAL_NVIC_EnableIRQ(DMA2_Channel3_IRQn);
+	/* DMA2_Channel4_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(DMA2_Channel4_IRQn, 0, 0);
+	HAL_NVIC_EnableIRQ(DMA2_Channel4_IRQn);
 	/* DMA2_Channel5_IRQn interrupt configuration */
 	HAL_NVIC_SetPriority(DMA2_Channel5_IRQn, 0, 0);
 	HAL_NVIC_EnableIRQ(DMA2_Channel5_IRQn);

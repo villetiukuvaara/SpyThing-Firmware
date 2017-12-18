@@ -17,7 +17,7 @@
 #include "usbd_desc.h"
 #include "usbd_audio_in.h"
 #include "usbd_audio_if.h"
-#include "audio_application.h"
+//#include "audio_application.h"
 #include "x_nucleo_cca02m1_audio_l4.h"
 
 #endif /* AUDIO_AUDIO_HAL_H_ */

@@ -165,9 +165,12 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 
   __disable_irq();
 
-  if(BSP_SD_WriteBlocks((uint32_t*)buff, 
-                        (uint32_t)(sector), 
+  if(BSP_SD_WriteBlocks((uint32_t*)buff,
+                        (uint32_t)(sector),
                         count, SD_DATATIMEOUT) == MSD_OK)
+//  if(BSP_SD_WriteBlocks_DMA((uint32_t*)buff,
+//                          (uint32_t)(sector),
+//                          count) == MSD_OK)
   {
     while(BSP_SD_GetCardState()!= MSD_OK)
     {

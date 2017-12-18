@@ -96,7 +96,7 @@ typedef struct {
  */
 
 /* Select the interrupt preemption priority and subpriority for the IT/DMA interrupt */
-#define AUDIO_IN_IRQ_PREPRIO          0   /* Select the preemption priority level(0 is the highest) */
+#define AUDIO_IN_IRQ_PREPRIO          5   /* Select the preemption priority level(0 is the highest) */
 
 /*------------------------------------------------------------------------------
  CONFIGURATION: Audio Driver Configuration parameters

@@ -221,7 +221,7 @@ Its dimension must be equal to (in uint16_t words):
 * @param  size: Not used in this driver.
 * @retval AUDIO_OK in case of success, AUDIO_ERROR otherwise 
 */
-uint8_t BSP_AUDIO_IN_Record(uint16_t* pbuf, uint32_t size) 
+uint8_t BSP_AUDIO_IN_Record(uint16_t* pbuf, uint32_t size)
 {  
   int32_t counter = 0;
   X_NUCLEO_CCA02M1_Handler.PCM_Data = pbuf;

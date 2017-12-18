@@ -11,7 +11,7 @@
 #include "ff_gen_drv.h"
 #include "stdbool.h"
 
-typedef uint16_t wave_sample_t;
+typedef int16_t wave_sample_t;
 
 typedef enum
 {

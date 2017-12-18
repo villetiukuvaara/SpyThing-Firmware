@@ -48,16 +48,14 @@
 void SVC_Handler(void);
 void PendSV_Handler(void);
 void SysTick_Handler(void);
-void DMA1_Channel3_IRQHandler(void);
 void DMA1_Channel4_IRQHandler(void);
-void DMA1_Channel6_IRQHandler(void);
-void DMA1_Channel7_IRQHandler(void);
-void I2C1_EV_IRQHandler(void);
 void I2C1_ER_IRQHandler(void);
 void SDMMC1_IRQHandler(void);
 void UART4_IRQHandler(void);
-void DMA2_Channel3_IRQHandler(void);
+void DMA2_Channel4_IRQHandler(void);
 void DMA2_Channel5_IRQHandler(void);
+void DFSDM1_FLT0_IRQHandler(void);
+void FPU_IRQHandler(void);
 
 #ifdef __cplusplus
 }
