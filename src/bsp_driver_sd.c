@@ -61,7 +61,16 @@
 
 /* Extern variables ---------------------------------------------------------*/ 
   
-extern SD_HandleTypeDef _HSD; 
+extern SD_HandleTypeDef _HSD;
+
+enum
+{
+	BSP_SD_STARTED,
+	BSP_SD_TX_CPLT,
+	BSP_SD_RX_CPLT,
+	BSP_SD_ERROR,
+	BSP_SD_ABORT
+} DMA_state;
 
 /* USER CODE BEGIN BeforeInitSection */
 /* can be used to modify / undefine following code or add code */
@@ -188,13 +197,17 @@ uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t NumOfBl
 uint8_t BSP_SD_ReadBlocks_DMA(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks)
 {
   uint8_t sd_state = MSD_OK;
+  DMA_state = BSP_SD_STARTED;
   
   /* Read block(s) in DMA transfer mode */
-  if (HAL_SD_ReadBlocks_DMA(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
+  if (HAL_SD_ReadBlocks_IT(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
   }
   
+  while(DMA_state == BSP_SD_STARTED);
+  if(DMA_state != BSP_SD_RX_CPLT) sd_state = MSD_ERROR;
+
   return sd_state; 
 }
 
@@ -211,13 +224,17 @@ uint8_t BSP_SD_ReadBlocks_DMA(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOf
 uint8_t BSP_SD_WriteBlocks_DMA(uint32_t *pData, uint32_t WriteAddr, uint32_t NumOfBlocks)
 {
   uint8_t sd_state = MSD_OK;
+  DMA_state = BSP_SD_STARTED;
   
   /* Write block(s) in DMA transfer mode */
-  if (HAL_SD_WriteBlocks_DMA(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
+  if (HAL_SD_WriteBlocks_IT(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
   }
   
+  while(DMA_state == BSP_SD_STARTED);
+  if(DMA_state != BSP_SD_TX_CPLT) sd_state = MSD_ERROR;
+
   return sd_state; 
 }
 
@@ -241,6 +258,27 @@ uint8_t BSP_SD_Erase(uint32_t StartAddr, uint32_t EndAddr)
 
   return sd_state; 
 }
+
+void HAL_SD_TxCpltCallback(SD_HandleTypeDef *hsd)
+{
+	if(hsd == &_HSD) DMA_state = BSP_SD_TX_CPLT;
+}
+
+void HAL_SD_RxCpltCallback(SD_HandleTypeDef *hsd)
+{
+	if(hsd == &_HSD) DMA_state = BSP_SD_RX_CPLT;
+}
+
+void HAL_SD_ErrorCallback(SD_HandleTypeDef *hsd)
+{
+	if(hsd == &_HSD) DMA_state = BSP_SD_ERROR;
+}
+
+void HAL_SD_AbortCallback(SD_HandleTypeDef *hsd)
+{
+	if(hsd == &_HSD) DMA_state = BSP_SD_ABORT;
+}
+
 
 /* USER CODE BEGIN BeforeHandlersSection */
 /* can be used to modify previous code / undefine following code / add code */

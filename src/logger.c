@@ -92,15 +92,17 @@ logger_result_t logger_wav_append_nchannels(FIL* file, uint16_t num_channels, ui
 	//fr = f_lseek(file, file_size);
 	//if(f_tell(file) != file_size) return LOGGER_FATFS_ERR;
 
-	for(uint32_t samp = 0; samp < num_samples; samp++)
-	{
-		for(uint16_t ch = 0; ch < num_channels; ch++)
-		{
-			fr = f_write(file, samples[ch] + samp, BYTES_PER_SAMPLE, &bw);
+//	for(uint32_t samp = 0; samp < num_samples; samp++)
+//	{
+//		for(uint16_t ch = 0; ch < num_channels; ch++)
+//		{
+			//fr = f_write(file, samples[ch] + samp, BYTES_PER_SAMPLE, &bw);
+			fr = f_write(file, samples[0], num_samples*BYTES_PER_SAMPLE, &bw);
 			if(fr != FR_OK) return LOGGER_FATFS_ERR;
-			if(bw != BYTES_PER_SAMPLE) return LOGGER_ERR;
-		}
-	}
+			//if(bw != BYTES_PER_SAMPLE) return LOGGER_ERR;
+			if(bw != num_samples*BYTES_PER_SAMPLE) return LOGGER_ERR;
+//		}
+//	}
 
 	return FR_OK;
 }
