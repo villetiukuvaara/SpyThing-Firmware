@@ -50,6 +50,8 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* Private define ------------------------------------------------------------*/
+#define SD_TIMEOUT 5000
+
 /* Private variables ---------------------------------------------------------*/
 /* Disk status */
 static volatile DSTATUS Stat = STA_NOINIT;
@@ -130,13 +132,9 @@ DRESULT SD_read(BYTE lun, BYTE *buff, DWORD sector, UINT count)
   uint32_t timeout = 100000;
 
   //__disable_irq();
-
-//  if(BSP_SD_ReadBlocks((uint32_t*)buff,
-//                       (uint32_t) (sector),
-//                       count, SD_DATATIMEOUT) == MSD_OK)
-  if(BSP_SD_ReadBlocks_DMA((uint32_t*)buff,
+  if(BSP_SD_ReadBlocks((uint32_t*)buff,
                          (uint32_t) (sector),
-                         count) == MSD_OK)
+                         count, SD_TIMEOUT) == MSD_OK)
   {
     while(BSP_SD_GetCardState()!= MSD_OK)
     {
@@ -171,9 +169,9 @@ DRESULT SD_write(BYTE lun, const BYTE *buff, DWORD sector, UINT count)
 //  if(BSP_SD_WriteBlocks((uint32_t*)buff,
 //                        (uint32_t)(sector),
 //                        count, SD_DATATIMEOUT) == MSD_OK)
-  if(BSP_SD_WriteBlocks_DMA((uint32_t*)buff,
+  if(BSP_SD_WriteBlocks((uint32_t*)buff,
                           (uint32_t)(sector),
-                          count) == MSD_OK)
+                          count, SD_TIMEOUT) == MSD_OK)
   {
     while(BSP_SD_GetCardState()!= MSD_OK)
     {

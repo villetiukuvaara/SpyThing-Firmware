@@ -49,9 +49,9 @@
 #include "main.h"
 #include "stm32l4xx_hal.h"
 #include "fatfs.h"
-#include "audio_hal.h"
 #include "retarget.h"
 #include "logger.h"
+#include "audio.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -79,29 +79,6 @@ UART_HandleTypeDef huart3;
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 
-#define N_MS N_MS_PER_INTERRUPT
-
-#define AUDIO_CHANNELS 1
-#define AUDIO_SAMPLING_FREQUENCY 32000
-
-#if (AUDIO_SAMPLING_FREQUENCY == 8000)
-#define MAX_DECIMATION_FACTOR 160
-#else
-#define MAX_DECIMATION_FACTOR 128
-#endif
-
-#define PCM_BUFFER_LENGTH ((AUDIO_SAMPLING_FREQUENCY/1000)*AUDIO_CHANNELS * N_MS)
-//#define PCM_BUFFER_LENGTH 32
-#define RECORD_TIME 20000
-#define SD_BUFFER_TIME 250
-#define PCM_SD_BUFFER_LENGTH 8192 //((AUDIO_SAMPLING_FREQUENCY/1000)*AUDIO_CHANNELS * SD_BUFFER_TIME)
-
-wave_sample_t PCM_Buffer[PCM_BUFFER_LENGTH];
-wave_sample_t PCM_SD_buffers[2][PCM_SD_BUFFER_LENGTH];
-bool audio_ready = false;
-uint32_t SD_buffer_pos[2] = {0, 0};
-uint32_t SD_buffer_num = 0;
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -126,107 +103,6 @@ static void MX_I2C1_Init(void);
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
-
-void record_audio(FIL* file)
-{
-	// Preallocate 10 seconds of audio
-	FRESULT res = f_lseek(file, (AUDIO_SAMPLING_FREQUENCY/1000)*RECORD_TIME*3);
-	if(res != FR_OK)
-	{
-		Error_Handler();
-	}
-
-	res = f_lseek(file, 0);
-	if(res != FR_OK)
-	{
-		Error_Handler();
-	}
-
-	//Init_Acquisition_Peripherals(AUDIO_SAMPLING_FREQUENCY, AUDIO_CHANNELS, 0);
-	if(BSP_AUDIO_IN_Init(AUDIO_SAMPLING_FREQUENCY, 16, 1) != AUDIO_OK)
-		Error_Handler();
-
-	//Start_Acquisition();
-	if(BSP_AUDIO_IN_Record((uint16_t *)PCM_Buffer, 0) != AUDIO_OK)
-		Error_Handler();
-
-	uint32_t start = HAL_GetTick();
-	uint32_t tot_samples = 0;
-
-	HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, 1);
-	while(HAL_GetTick() < start + RECORD_TIME)
-	{
-		if(audio_ready)
-		{
-			wave_sample_t* buffer_arr[] = {PCM_SD_buffers[SD_buffer_num]};
-			uint32_t num_samples = SD_buffer_pos[SD_buffer_num];
-			SD_buffer_pos[0] = 0;
-			SD_buffer_pos[1] = 0;
-			tot_samples += num_samples;
-			SD_buffer_num = (SD_buffer_num + 1)%2;
-			audio_ready = false;
-
-			if(logger_wav_append_nchannels(file, 1, num_samples, buffer_arr) != LOGGER_OK)
-			{
-				Error_Handler();
-			}
-		}
-	}
-	HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, 0);
-	BSP_AUDIO_IN_Stop();
-
-	//	wave_sample_t* PCM_Buffer_arr[] = {PCM_Buffer_2};
-	//	if(logger_wav_append_nchannels(file, 1, tot_samples, PCM_Buffer_arr) != LOGGER_OK)
-	//	{
-	//		Error_Handler();
-	//	}
-
-	if(logger_wav_write_header(file, AUDIO_SAMPLING_FREQUENCY, 1, tot_samples) != LOGGER_OK)
-	{
-		Error_Handler();
-	}
-
-	//while(1);
-}
-
-
-
-
-/**
- * @brief  Half Transfer user callback, called by BSP functions.
- * @param  None
- * @retval None
- */
-void BSP_AUDIO_IN_HalfTransfer_CallBack(void)
-{
-	BSP_AUDIO_IN_TransferComplete_CallBack();
-}
-
-/**
- * @brief  Transfer Complete user callback, called by BSP functions.
- * @param  None
- * @retval None
- */
-void BSP_AUDIO_IN_TransferComplete_CallBack(void)
-{
-	if(audio_ready) return;
-	if(SD_buffer_pos[SD_buffer_num] + PCM_BUFFER_LENGTH < PCM_SD_BUFFER_LENGTH)
-	{
-		memcpy(PCM_SD_buffers[SD_buffer_num] + SD_buffer_pos[SD_buffer_num], PCM_Buffer, PCM_BUFFER_LENGTH*sizeof(wave_sample_t));
-		SD_buffer_pos[SD_buffer_num] += PCM_BUFFER_LENGTH;
-	}
-	if(SD_buffer_pos[SD_buffer_num] + PCM_BUFFER_LENGTH >= PCM_SD_BUFFER_LENGTH) audio_ready = true;
-}
-
-void BSP_AUDIO_IN_Error_Callback(void)
-{
-	Error_Handler();
-}
-
-
-
-#define N_BLOCKS 2
-bool tx_cplt = false;
 
 int main(void)
 {
@@ -266,60 +142,10 @@ int main(void)
 
 	RetargetInit(&huart4);
 
-
-//	if(BSP_AUDIO_IN_Init(AUDIO_SAMPLING_FREQUENCY, 16, 1) != AUDIO_OK)
-//			Error_Handler();
-//	if(BSP_AUDIO_IN_Record((uint16_t *)PCM_Buffer, 0) != AUDIO_OK)
-//		Error_Handler();
-//
-//	if(BSP_SD_Init() != MSD_OK)
-//	{
-//		printf("Init error\n");
-//		Error_Handler();
-//	}
-//
-//	HAL_SD_CardInfoTypeDef info;
-//	HAL_SD_CardStateTypedef state;
-//	HAL_SD_GetCardInfo(&_HSD, &info);
-//	state = HAL_SD_GetCardState(&_HSD);
-//
-//	printf("Sector size %lu\n", info.LogBlockSize);
-//	printf("Num sectors %lu\n", info.LogBlockNbr);
-//	printf("State %i\n", state);
-//
-//	uint8_t pData[512*N_BLOCKS];
-//	memset(pData, 0x33, 512*N_BLOCKS);
-
-//	if (HAL_SD_WriteBlocks_DMA(&_HSD, (uint8_t *)pData, 0, N_BLOCKS) != HAL_OK)
-//	{
-//		printf("Fail starting DMA write\n");
-//		Error_Handler();
-//	}
-
-//	if (HAL_SD_WriteBlocks(&_HSD, (uint8_t *)pData, 0, N_BLOCKS, 10000) != HAL_OK)
-//	{
-//		printf("Fail starting write\n");
-//		Error_Handler();
-//	}
-//
-//
-//	//while(!tx_cplt);
-//	//printf("Xfer complete\n");
-//
-//	while((state = HAL_SD_GetCardState(&_HSD)) != HAL_SD_CARD_TRANSFER);
-//
-//	printf("State after xfer %i\n", state);
-
-
 	FATFS SDFatFs;  /* File system object for SD card logical drive */
 	FIL MyFile;     /* File object */
 	//char SDPath[4]; /* SD card logical drive path */
 
-	FRESULT res;                                          /* FatFs function common result code */
-	uint32_t byteswritten, bytesread;                     /* File write/read counts */
-//	uint8_t wtext[] = "This is STM32 working with FatFs"; /* File write buffer */
-	uint8_t rtext[100];                                   /* File read buffer */
-//
 	/*##-1- Link the micro SD disk I/O driver ##################################*/
 	if(FATFS_LinkDriver(&SD_Driver, SD_Path) == 0)
 	{
@@ -349,68 +175,13 @@ int main(void)
 				else
 				{
 					/*##-5- Write data to the text file ################################*/
-//					res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
-//										wave_sample_t samples_0[] = {0x1122, 0x3344};
-//										wave_sample_t samples_1[] = {0x5566, 0x7788};
-//										wave_sample_t* samples[2];
-//										samples[0] = samples_0;
-//										samples[1] = samples_1;
-//
-//										logger_wav_write_header(&MyFile, 22050, 2, 512);
-//										res = logger_wav_append_nchannels(&MyFile, 2, 2, samples);
-					record_audio(&MyFile);
 
-					byteswritten = f_tell(&MyFile);
+					HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
+					audio_init();
+					audio_record(&MyFile, 5000, false);
+					HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
 
-					/*##-6- Close the open text file #################################*/
-					if (f_close(&MyFile) != FR_OK )
-					{
-						Error_Handler();
-					}
-
-					if((byteswritten == 0) || (res != FR_OK))
-					{
-						/* 'STM32.TXT' file Write or EOF Error */
-						//Error_Handler();
-					}
-					else
-					{
-						/*##-7- Open the text file object with read access ###############*/
-						if(f_open(&MyFile, "audio.wav", FA_READ) != FR_OK)
-						{
-							/* 'STM32.TXT' file Open for read Error */
-							Error_Handler();
-						}
-						else
-						{
-							/*##-8- Read data from the text file ###########################*/
-							res = f_read(&MyFile, rtext, sizeof(rtext), (UINT*)&bytesread);
-
-							if((bytesread == 0) || (res != FR_OK))
-							{
-								/* 'STM32.TXT' file Read or EOF Error */
-								//Error_Handler();
-							}
-							else
-							{
-								/*##-9- Close the open text file #############################*/
-								f_close(&MyFile);
-
-								/*##-10- Compare read data with the expected data ############*/
-								if((bytesread != byteswritten))
-								{
-									/* Read data is different from the expected data */
-									//Error_Handler();
-								}
-								else
-								{
-									/* Success of the demo: no error occurrence */
-									//BSP_LED_On(LED2);
-									HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
-								}
-							}
-						}
-					}
+					f_close(&MyFile);
 				}
 			}
 		}

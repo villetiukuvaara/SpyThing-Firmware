@@ -138,51 +138,51 @@ __weak void BSP_SD_DetectCallback(void)
   
 }
 
-/* USER CODE BEGIN BeforeReadBlocksSection */
-/* can be used to modify previous code / undefine following code / add code */
-/* USER CODE END BeforeReadBlocksSection */
-/**
-  * @brief  Reads block(s) from a specified address in an SD card, in polling mode.
-  * @param  pData: Pointer to the buffer that will contain the data to transmit
-  * @param  ReadAddr: Address from where data is to be read
-  * @param  NumOfBlocks: Number of SD blocks to read
-  * @param  Timeout: Timeout for read operation
-  * @retval SD status
-  */
-uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks, uint32_t Timeout)
-{
-  uint8_t sd_state = MSD_OK;
-
-  if (HAL_SD_ReadBlocks(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks, Timeout) != HAL_OK)
-  {
-    sd_state = MSD_ERROR;
-  }
-
-  return sd_state;  
-}
-
-/* USER CODE BEGIN BeforeWriteBlocksSection */
-/* can be used to modify previous code / undefine following code / add code */
-/* USER CODE END BeforeWriteBlocksSection */
-/**
-  * @brief  Writes block(s) to a specified address in an SD card, in polling mode. 
-  * @param  pData: Pointer to the buffer that will contain the data to transmit
-  * @param  WriteAddr: Address from where data is to be written
-  * @param  NumOfBlocks: Number of SD blocks to write
-  * @param  Timeout: Timeout for write operation
-  * @retval SD status
-  */
-uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t NumOfBlocks, uint32_t Timeout)
-{
-  uint8_t sd_state = MSD_OK;
-
-  if (HAL_SD_WriteBlocks(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks, Timeout) != HAL_OK) 
-  {
-    sd_state = MSD_ERROR;
-  }
-
-  return sd_state;  
-}
+///* USER CODE BEGIN BeforeReadBlocksSection */
+///* can be used to modify previous code / undefine following code / add code */
+///* USER CODE END BeforeReadBlocksSection */
+///**
+//  * @brief  Reads block(s) from a specified address in an SD card, in polling mode.
+//  * @param  pData: Pointer to the buffer that will contain the data to transmit
+//  * @param  ReadAddr: Address from where data is to be read
+//  * @param  NumOfBlocks: Number of SD blocks to read
+//  * @param  Timeout: Timeout for read operation
+//  * @retval SD status
+//  */
+//uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks, uint32_t Timeout)
+//{
+//  uint8_t sd_state = MSD_OK;
+//
+//  if (HAL_SD_ReadBlocks(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks, Timeout) != HAL_OK)
+//  {
+//    sd_state = MSD_ERROR;
+//  }
+//
+//  return sd_state;
+//}
+//
+///* USER CODE BEGIN BeforeWriteBlocksSection */
+///* can be used to modify previous code / undefine following code / add code */
+///* USER CODE END BeforeWriteBlocksSection */
+///**
+//  * @brief  Writes block(s) to a specified address in an SD card, in polling mode.
+//  * @param  pData: Pointer to the buffer that will contain the data to transmit
+//  * @param  WriteAddr: Address from where data is to be written
+//  * @param  NumOfBlocks: Number of SD blocks to write
+//  * @param  Timeout: Timeout for write operation
+//  * @retval SD status
+//  */
+//uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t NumOfBlocks, uint32_t Timeout)
+//{
+//  uint8_t sd_state = MSD_OK;
+//
+//  if (HAL_SD_WriteBlocks(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks, Timeout) != HAL_OK)
+//  {
+//    sd_state = MSD_ERROR;
+//  }
+//
+//  return sd_state;
+//}
 
 /* USER CODE BEGIN BeforeReadDMABlocksSection */
 /* can be used to modify previous code / undefine following code / add code */
@@ -200,7 +200,7 @@ uint8_t BSP_SD_ReadBlocks_DMA(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOf
   DMA_state = BSP_SD_STARTED;
   
   /* Read block(s) in DMA transfer mode */
-  if (HAL_SD_ReadBlocks_IT(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
+  if (HAL_SD_ReadBlocks_DMA(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
   }
@@ -227,7 +227,7 @@ uint8_t BSP_SD_WriteBlocks_DMA(uint32_t *pData, uint32_t WriteAddr, uint32_t Num
   DMA_state = BSP_SD_STARTED;
   
   /* Write block(s) in DMA transfer mode */
-  if (HAL_SD_WriteBlocks_IT(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
+  if (HAL_SD_WriteBlocks_DMA(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
   {
     sd_state = MSD_ERROR;
   }
@@ -236,6 +236,52 @@ uint8_t BSP_SD_WriteBlocks_DMA(uint32_t *pData, uint32_t WriteAddr, uint32_t Num
   if(DMA_state != BSP_SD_TX_CPLT) sd_state = MSD_ERROR;
 
   return sd_state; 
+}
+
+/*
+ * Reads from the SD card using interrupts, but is still blocking so that it can return a status
+ */
+uint8_t BSP_SD_ReadBlocks(uint32_t *pData, uint32_t ReadAddr, uint32_t NumOfBlocks, uint32_t Timeout)
+{
+  DMA_state = BSP_SD_STARTED;
+  uint32_t start = HAL_GetTick();
+
+  /* Read block(s) in DMA transfer mode */
+  if (HAL_SD_ReadBlocks_IT(&_HSD, (uint8_t *)pData, ReadAddr, NumOfBlocks) != HAL_OK)
+  {
+    return MSD_ERROR;
+  }
+
+  while(DMA_state == BSP_SD_STARTED)
+  {
+	  if(HAL_GetTick() > start + Timeout) return MSD_ERROR;
+  }
+  if(DMA_state != BSP_SD_RX_CPLT) return MSD_ERROR;
+
+  return MSD_OK;
+}
+
+/*
+ * Writes to the SD card but is still blocking so that it can return a status
+  */
+uint8_t BSP_SD_WriteBlocks(uint32_t *pData, uint32_t WriteAddr, uint32_t NumOfBlocks, uint32_t Timeout)
+{
+  DMA_state = BSP_SD_STARTED;
+  uint32_t start = HAL_GetTick();
+
+  /* Write block(s) in DMA transfer mode */
+  if (HAL_SD_WriteBlocks_IT(&_HSD, (uint8_t *)pData, WriteAddr, NumOfBlocks) != HAL_OK)
+  {
+	  return MSD_ERROR;
+  }
+
+  while(DMA_state == BSP_SD_STARTED)
+  {
+	  if(HAL_GetTick() > start + Timeout) return MSD_ERROR;
+  }
+  if(DMA_state != BSP_SD_TX_CPLT) return MSD_ERROR;
+
+  return MSD_OK;
 }
 
 /* USER CODE BEGIN BeforeEraseSection */
