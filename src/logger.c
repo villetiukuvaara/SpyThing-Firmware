@@ -9,6 +9,42 @@ static const uint8_t WAV_HEADER_2[] = {0x57, 0x41, 0x56, 0x45, 0x66, 0x6D, 0x74,
 static const uint8_t WAV_HEADER_3[] = {0x10, 0x00, 0x00, 0x00, 0x01, 0x00};
 static const uint8_t WAV_HEADER_4[] = {0x64, 0x61, 0x74, 0x61};
 
+
+logger_result_t logger_wav_read_header(FIL *file, uint32_t* sample_rate, uint16_t* num_channels, uint32_t* num_samples)
+{
+	FRESULT fr;
+	UINT br;
+
+	uint32_t sample_rate2;
+	uint16_t num_channels2;
+	uint32_t num_samples2;
+	uint32_t subchunk_2_size;
+
+	fr = f_lseek(file, 22);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	fr = f_read(file, &num_channels2, 2, &br);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	if(br != 2) return LOGGER_ERR;
+
+	fr = f_lseek(file, 24);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	fr = f_read(file, &sample_rate2, 4, &br);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	if(br != 4) return LOGGER_ERR;
+
+	fr = f_lseek(file, 40);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	fr = f_read(file, &subchunk_2_size, 4, &br);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	if(br != 4) return LOGGER_ERR;
+
+	if(num_channels != NULL) *num_channels = num_channels2;
+	if(num_samples != NULL) *num_samples = subchunk_2_size/(num_channels2*BYTES_PER_SAMPLE);
+	if(sample_rate != NULL) *sample_rate = sample_rate2;
+
+	return LOGGER_OK;
+}
+
 logger_result_t logger_wav_write_header(FIL *file, uint32_t sample_rate, uint16_t num_channels, uint32_t num_samples)
 {
 	FRESULT fr;
@@ -82,27 +118,32 @@ logger_result_t logger_wav_write_header(FIL *file, uint32_t sample_rate, uint16_
 	return LOGGER_OK;
 }
 
+logger_result_t logger_wav_append(FIL* file, uint32_t num_samples, wave_sample_t* samples)
+{
+	FRESULT fr;
+	UINT bw;
+
+	fr = f_write(file, samples, num_samples*BYTES_PER_SAMPLE, &bw);
+	if(fr != FR_OK) return LOGGER_FATFS_ERR;
+	if(bw != num_samples*BYTES_PER_SAMPLE) return LOGGER_ERR;
+
+	return FR_OK;
+}
+
 logger_result_t logger_wav_append_nchannels(FIL* file, uint16_t num_channels, uint32_t num_samples, wave_sample_t* samples[])
 {
 	FRESULT fr;
 	UINT bw;
 
-	// Go to the end of the file
-	//uint32_t file_size = f_size(file);
-	//fr = f_lseek(file, file_size);
-	//if(f_tell(file) != file_size) return LOGGER_FATFS_ERR;
-
-//	for(uint32_t samp = 0; samp < num_samples; samp++)
-//	{
-//		for(uint16_t ch = 0; ch < num_channels; ch++)
-//		{
-			//fr = f_write(file, samples[ch] + samp, BYTES_PER_SAMPLE, &bw);
-			fr = f_write(file, samples[0], num_samples*BYTES_PER_SAMPLE, &bw);
+	for(uint32_t samp = 0; samp < num_samples; samp++)
+	{
+		for(uint16_t ch = 0; ch < num_channels; ch++)
+		{
+			fr = f_write(file, samples[ch] + samp, BYTES_PER_SAMPLE, &bw);
 			if(fr != FR_OK) return LOGGER_FATFS_ERR;
-			//if(bw != BYTES_PER_SAMPLE) return LOGGER_ERR;
-			if(bw != num_samples*BYTES_PER_SAMPLE) return LOGGER_ERR;
-//		}
-//	}
+			if(bw != BYTES_PER_SAMPLE) return LOGGER_ERR;
+		}
+	}
 
 	return FR_OK;
 }
