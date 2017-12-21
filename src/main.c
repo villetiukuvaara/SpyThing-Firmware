@@ -146,6 +146,8 @@ int main(void)
 	FIL MyFile;     /* File object */
 	//char SDPath[4]; /* SD card logical drive path */
 
+	while(BSP_SD_IsDetected() != SD_PRESENT);
+
 	/*##-1- Link the micro SD disk I/O driver ##################################*/
 	if(FATFS_LinkDriver(&SD_Driver, SD_Path) == 0)
 	{
