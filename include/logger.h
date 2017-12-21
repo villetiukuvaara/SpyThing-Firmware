@@ -20,6 +20,7 @@ typedef enum
 	LOGGER_FATFS_ERR =2
 } logger_result_t;
 
+logger_result_t logger_wav_read_header(FIL *file, uint32_t* sample_rate, uint16_t* num_channels, uint32_t* num_samples);
 logger_result_t logger_wav_write_header(FIL *file, uint32_t sample_rate, uint16_t num_channels, uint32_t num_samples);
 logger_result_t logger_wav_append_nchannels(FIL* file, uint16_t num_channels, uint32_t num_samples, wave_sample_t* samples[]);
 

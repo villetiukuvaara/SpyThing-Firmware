@@ -169,7 +169,7 @@ int main(void)
 			else
 			{
 				/*##-4- Create and Open a new text file object with write access #####*/
-				if(f_open(&MyFile, "audio.wav", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+				if(f_open(&MyFile, "audio.wav", FA_CREATE_ALWAYS | FA_WRITE | FA_READ) != FR_OK)
 				{
 					/* 'STM32.TXT' file Open for write Error */
 					Error_Handler();
