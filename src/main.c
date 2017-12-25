@@ -146,47 +146,27 @@ int main(void)
 	//MX_FATFS_Init();
 	MX_I2C1_Init();
 
-	//RetargetInit(&huart4);
-	uint8_t c;
+	RetargetInit(&huart4);
 
-	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
-	HAL_Delay(300);
-	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_SET);
+	if(gps_initialize(&huart3, &hi2c1, 60000) != GPS_OK) Error_Handler();
+
+	gps_sol_t sol;
+	gps_status_t stat;
+	uint32_t cnt = 0;
 
 	while(1)
 	{
-		uint8_t data = 0xFF;
-		HAL_StatusTypeDef stat = HAL_I2C_Master_Transmit(&hi2c1, GPS_I2C_ADDRESS << 1, &data, 1, HAL_MAX_DELAY);
-		stat = HAL_I2C_Master_Receive(&hi2c1, GPS_I2C_ADDRESS << 1, &data, 1, HAL_MAX_DELAY);
-		if(data != 0xFF) HAL_UART_Transmit(&huart4, &data, 1, HAL_MAX_DELAY);
-	}
-
-	HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
-	/* Infinite loop */
-	while (1)
-	{
-		while(pc_buff_head != pc_buffer_tail)
+		HAL_Delay(1000);
+		stat = gps_solution(&sol, 2000);
+		if(stat == GPS_OK)
 		{
-			HAL_UART_Transmit(&huart3, pc_buff + pc_buffer_tail, 1, 10000);
-			pc_buffer_tail = (pc_buffer_tail+1)%512;
+			if(sol.fixType != 0) printf("(%li,%li) @ %02u:%02u\n", sol.lat, sol.lon, sol.hour, sol.min);
+			else printf("no sol #%lu\n", cnt++);
 		}
-		bool restart = false;
-		while(HAL_UART_Receive(&huart3, &c, 1, 200) == HAL_OK)
+		else
 		{
-			if(!restart)
-			{
-				restart = true;
-				HAL_UART_AbortReceive_IT(&huart4);
-			}
-			HAL_UART_Transmit_IT(&huart4, &c, 1);
+			printf("Error\n");
 		}
-		if(restart) HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
-		/*if(rx_ready)
-		{
-			HAL_UART_Receive_IT(&huart4, &huart4_rx_buffer, )
-			rx_ready = false;
-			HAL_UART
-		}*/
 	}
 }
 
