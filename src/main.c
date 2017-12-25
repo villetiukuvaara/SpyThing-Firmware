@@ -52,6 +52,7 @@
 #include "retarget.h"
 #include "logger.h"
 #include "audio.h"
+#include "gps.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -101,8 +102,13 @@ static void MX_I2C1_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
+bool rx_ready = false;
 
 /* USER CODE END 0 */
+
+uint8_t pc_buff[512];
+uint32_t pc_buff_head = 0, pc_buffer_tail = 0;
+bool rx = true;
 
 int main(void)
 {
@@ -128,77 +134,74 @@ int main(void)
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	MX_DMA_Init();
-	MX_SDMMC1_SD_Init();
+	//MX_DMA_Init();
+	//MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
-	//MX_USART3_UART_Init();
+	MX_USART3_UART_Init();
 	MX_UART4_Init();
 	//MX_RTC_Init();
 	//MX_SPI1_Init();
 	//MX_USB_OTG_FS_USB_Init();
 	//MX_I2C2_Init();
 	//MX_FATFS_Init();
-	//MX_I2C1_Init();
+	MX_I2C1_Init();
 
-	RetargetInit(&huart4);
+	//RetargetInit(&huart4);
+	uint8_t c;
 
-	FATFS SDFatFs;  /* File system object for SD card logical drive */
-	FIL MyFile;     /* File object */
-	//char SDPath[4]; /* SD card logical drive path */
+	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
+	HAL_Delay(300);
+	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_SET);
 
-	while(BSP_SD_IsDetected() != SD_PRESENT);
-
-	/*##-1- Link the micro SD disk I/O driver ##################################*/
-	if(FATFS_LinkDriver(&SD_Driver, SD_Path) == 0)
+	while(1)
 	{
-		/*##-2- Register the file system object to the FatFs module ##############*/
-		if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK)
-		{
-			/* FatFs Initialization Error */
-			Error_Handler();
-		}
-		else
-		{
-			/*##-3- Create a FAT file system (format) on the logical drive #########*/
-			/* WARNING: Formatting the uSD card will delete all content on the device */
-			if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK)
-			{
-				/* FatFs Format Error */
-				Error_Handler();
-			}
-			else
-			{
-				/*##-4- Create and Open a new text file object with write access #####*/
-				if(f_open(&MyFile, "audio.wav", FA_CREATE_ALWAYS | FA_WRITE | FA_READ) != FR_OK)
-				{
-					/* 'STM32.TXT' file Open for write Error */
-					Error_Handler();
-				}
-				else
-				{
-					/*##-5- Write data to the text file ################################*/
-
-					HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
-					audio_init();
-					audio_record(&MyFile, 5000, false);
-					HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
-
-					f_close(&MyFile);
-				}
-			}
-		}
+		uint8_t data = 0xFF;
+		HAL_StatusTypeDef stat = HAL_I2C_Master_Transmit(&hi2c1, GPS_I2C_ADDRESS << 1, &data, 1, HAL_MAX_DELAY);
+		stat = HAL_I2C_Master_Receive(&hi2c1, GPS_I2C_ADDRESS << 1, &data, 1, HAL_MAX_DELAY);
+		if(data != 0xFF) HAL_UART_Transmit(&huart4, &data, 1, HAL_MAX_DELAY);
 	}
 
-	/*##-11- Unlink the RAM disk I/O driver ####################################*/
-	FATFS_UnLinkDriver(SD_Path);
-
-
+	HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
 	/* Infinite loop */
 	while (1)
 	{
+		while(pc_buff_head != pc_buffer_tail)
+		{
+			HAL_UART_Transmit(&huart3, pc_buff + pc_buffer_tail, 1, 10000);
+			pc_buffer_tail = (pc_buffer_tail+1)%512;
+		}
+		bool restart = false;
+		while(HAL_UART_Receive(&huart3, &c, 1, 200) == HAL_OK)
+		{
+			if(!restart)
+			{
+				restart = true;
+				HAL_UART_AbortReceive_IT(&huart4);
+			}
+			HAL_UART_Transmit_IT(&huart4, &c, 1);
+		}
+		if(restart) HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
+		/*if(rx_ready)
+		{
+			HAL_UART_Receive_IT(&huart4, &huart4_rx_buffer, )
+			rx_ready = false;
+			HAL_UART
+		}*/
 	}
 }
 
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if(huart == &huart4)
+	{
+		pc_buff_head = (pc_buff_head+1)%512;
+		HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
+	}
+}
+
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+}
 
 /** System Clock Configuration
  */
@@ -211,13 +214,13 @@ void SystemClock_Config(void)
 
 	/**Configure LSE Drive Capability
 	 */
-	__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+	//__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
 	/**Initializes the CPU, AHB and APB busses clocks
 	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI//|RCC_OSCILLATORTYPE_LSE
 			|RCC_OSCILLATORTYPE_MSI;
-	RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+	//RCC_OscInitStruct.LSEState = RCC_LSE_ON;
 	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
 	RCC_OscInitStruct.HSICalibrationValue = 16;
 	RCC_OscInitStruct.MSIState = RCC_MSI_ON;
@@ -249,7 +252,7 @@ void SystemClock_Config(void)
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
+	PeriphClkInit.PeriphClockSelection = /*RCC_PERIPHCLK_RTC|*/RCC_PERIPHCLK_USART3
 			|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
 			|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
 			|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
@@ -260,7 +263,7 @@ void SystemClock_Config(void)
 	PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
 	PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
 	PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
-	PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+	//PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
 	PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
 	PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
 	PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
@@ -275,11 +278,11 @@ void SystemClock_Config(void)
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
+	//HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
 
 	/**Enables the Clock Security System
 	 */
-	 HAL_RCCEx_EnableLSECSS();
+	 //HAL_RCCEx_EnableLSECSS();
 
 	/**Configure the main internal regulator output voltage
 	 */
