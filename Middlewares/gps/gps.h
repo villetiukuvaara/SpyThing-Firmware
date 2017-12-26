@@ -89,6 +89,46 @@ typedef union
 	uint16_t bytes;
 } bitfield16_t;
 
+typedef union
+{
+	struct
+	{
+		volatile unsigned char b0:1;
+		volatile unsigned char b1:1;
+		volatile unsigned char b2:1;
+		volatile unsigned char b3:1;
+		volatile unsigned char b4:1;
+		volatile unsigned char b5:1;
+		volatile unsigned char b6:1;
+		volatile unsigned char b7:1;
+		volatile unsigned char b8:1;
+		volatile unsigned char b9:1;
+		volatile unsigned char b10:1;
+		volatile unsigned char b11:1;
+		volatile unsigned char b12:1;
+		volatile unsigned char b13:1;
+		volatile unsigned char b14:1;
+		volatile unsigned char b15:1;
+		volatile unsigned char b16:1;
+		volatile unsigned char b17:1;
+		volatile unsigned char b18:1;
+		volatile unsigned char b19:1;
+		volatile unsigned char b20:1;
+		volatile unsigned char b21:1;
+		volatile unsigned char b22:1;
+		volatile unsigned char b23:1;
+		volatile unsigned char b24:1;
+		volatile unsigned char b25:1;
+		volatile unsigned char b26:1;
+		volatile unsigned char b27:1;
+		volatile unsigned char b28:1;
+		volatile unsigned char b29:1;
+		volatile unsigned char b30:1;
+		volatile unsigned char b31:1;
+	};
+	uint32_t bytes;
+} bitfield32_t;
+
 typedef struct
 {
 	uint32_t iTOW;

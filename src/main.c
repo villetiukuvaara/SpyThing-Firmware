@@ -53,6 +53,7 @@
 #include "logger.h"
 #include "audio.h"
 #include "gps.h"
+#include <stdbool.h>
 
 /* USER CODE BEGIN Includes */
 
@@ -143,7 +144,7 @@ int main(void)
 	//MX_SPI1_Init();
 	//MX_USB_OTG_FS_USB_Init();
 	//MX_I2C2_Init();
-	//MX_FATFS_Init();
+	MX_FATFS_Init();
 	MX_I2C1_Init();
 
 	RetargetInit(&huart4);
@@ -154,20 +155,68 @@ int main(void)
 	gps_status_t stat;
 	uint32_t cnt = 0;
 
+	bool stopped = false, fix = false;
+	uint32_t wait = 0;
+
 	while(1)
 	{
 		HAL_Delay(1000);
-		stat = gps_solution(&sol, 2000);
+
+		if(!stopped && fix && wait++ > 5)
+		{
+			gps_stop();
+			stopped = true;
+			wait = 0;
+			printf("-->stop\n");
+		}
+		else if(stopped && wait++ > 5)
+		{
+			gps_start();
+			stopped = false;
+			wait = 0;
+			printf("-->start\n");
+		}
+
+		stat = gps_solution(&sol, 500);
 		if(stat == GPS_OK)
 		{
-			if(sol.fixType != 0) printf("(%li,%li) @ %02u:%02u\n", sol.lat, sol.lon, sol.hour, sol.min);
-			else printf("no sol #%lu\n", cnt++);
+			if(sol.fixType != 0)
+			{
+				fix = true;
+				printf("(%li,%li) @ %02u:%02u\n", sol.lat, sol.lon, sol.hour, sol.min);
+			}
+			else
+			{
+				fix = false;
+				printf("no sol #%lu\n", cnt++);
+			}
 		}
 		else
 		{
-			printf("Error\n");
+			printf("no response\n");
 		}
 	}
+
+	FATFS SDFatFs;  /* File system object for SD card logical drive */
+	FIL gps_file, audio_file;     /* File object */
+	//char SDPath[4]; /* SD card logical drive path */
+
+	if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK) Error_Handler();
+
+	if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK) Error_Handler();
+
+	if(f_open(&gps_file, "STM32.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) Error_Handler();
+	f_close(&gps_file);
+
+	/*##-11- Unlink the RAM disk I/O driver ####################################*/
+	FATFS_UnLinkDriver(SD_Path);
+
+	while(1)
+	{
+
+	}
+
+
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)

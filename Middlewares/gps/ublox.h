@@ -140,4 +140,13 @@ typedef struct
 	uint8_t reserved1;
 } ubx_cfg_rst_data_t;
 
+typedef struct
+{
+	uint8_t version;
+	uint8_t reserved1[3];
+	uint32_t duration;
+	bitfield32_t flags;
+	bitfield32_t wakeupSources;
+} ubx_rxm_pmreq_data_t;
+
 #endif /* GPS_UBLOX_H_ */

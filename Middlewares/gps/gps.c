@@ -74,32 +74,38 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	return GPS_OK;
 }
 
+/*
+ * Does not guarantee that the GPS has really started back up!
+ */
 gps_status_t gps_start()
 {
-	ubx_packet_t p;
-	p.pkt_class = MSG_CLASS_CFG;
-	p.id = MSG_ID_CFG_RST;
+	// Send data on UART 1 RX to wake up
+	uint8_t data = 0b10101010;
+	if(HAL_UART_Transmit(gps_huart, &data, 1, TX_TIMEOUT) != HAL_OK) return GPS_ERR;
+	HAL_Delay(600);
 
-	ubx_cfg_rst_data_t data;
-	p.data = (uint8_t*)(&data);
-	p.length = sizeof(ubx_cfg_rst_data_t);
-	data.resetMode = 0x09; // Controlled GNSS stop
-	gps_status_t stat = gps_ubx_tx(&p, 1000);
-	return stat;
+	return GPS_OK;
 }
 
 gps_status_t gps_stop()
 {
-	ubx_packet_t p;
-	p.pkt_class = MSG_CLASS_CFG;
-	p.id = MSG_ID_CFG_RST;
+	ubx_rxm_pmreq_data_t data;
+	memset(&data, 0, sizeof(ubx_rxm_pmreq_data_t));
+	data.duration = 0; // Forever
+	data.flags.b1 = 1;
+	data.flags.b2 = 1;
+	data.wakeupSources.b3 = 1; // Wakeup on activity on UART 1 RX
 
-	ubx_cfg_rst_data_t data;
-	p.data = (uint8_t*)(&data);
-	p.length = sizeof(ubx_cfg_rst_data_t);
-	data.resetMode = 0x08; // Controlled GNSS stop
-	gps_status_t stat = gps_ubx_tx(&p, 1000);
-	return stat;
+	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_RXM, MSG_ID_RXM_PMREQ, sizeof(ubx_rxm_pmreq_data_t), (uint8_t*)&data);
+
+	gps_status_t stat;
+	uint8_t retry = 0;
+	while(retry++ < NUM_RETRIES)
+	{
+		stat = gps_ubx_tx(&p, TX_TIMEOUT);
+		if(stat == GPS_OK) break;
+	}
+	if(stat != GPS_OK) return stat;
 }
 
 gps_status_t gps_solution(gps_sol_t* solution, uint32_t timeout)
