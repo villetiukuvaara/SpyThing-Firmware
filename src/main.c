@@ -149,6 +149,10 @@ int main(void)
 
 	RetargetInit(&huart4);
 
+	uint8_t newline = 30;
+	while(newline-- > 0)
+		printf("\n");
+
 	if(gps_initialize(&huart3, &hi2c1, 60000) != GPS_OK) Error_Handler();
 
 	gps_sol_t sol;

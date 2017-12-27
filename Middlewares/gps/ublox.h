@@ -55,6 +55,7 @@
     #define MSG_ID_CFG_TP 0x07
     #define MSG_ID_CFG_USB 0x1B
 	#define MSG_ID_CFG_INF 0x02
+	#define MSG_ID_CFG_GNSS 0x3E
 #define MSG_CLASS_ESF 0x10
     #define MSG_ID_ESF_MEAS 0x02
     #define MSG_ID_ESF_STATUS 0x10
@@ -148,5 +149,62 @@ typedef struct
 	bitfield32_t flags;
 	bitfield32_t wakeupSources;
 } ubx_rxm_pmreq_data_t;
+
+typedef struct
+{
+	bitfield16_t mask;
+	uint8_t dynModel;
+	uint8_t fixMode;
+	int32_t fixedAlt;
+	uint32_t fixedAltVar;
+	int8_t minElev;
+	uint8_t drLimit;
+	uint16_t pDop;
+	uint16_t tDop;
+	uint16_t pAcc;
+	uint16_t tAcc;
+	uint8_t staticHoldThresh;
+	uint8_t dgnssTimeout;
+	uint8_t cnoTheshNumSVs;
+	uint8_t cnoThresh;
+	uint8_t reserved1[2];
+	uint16_t staticHoldMaxDist;
+	uint8_t utcStandard;
+	uint8_t reserved2[5];
+} ubx_cfg_nav5_data_t;
+
+typedef struct
+{
+	uint8_t version;
+	uint8_t reserved1;
+	uint8_t masStartupStateDur;
+	uint8_t reserved2;
+	bitfield32_t flags;
+	uint32_t updatePeriod;
+	uint32_t searchPeriod;
+	uint32_t gridOffset;
+	uint16_t onTime;
+	uint16_t minAcqTime;
+	uint8_t reserved3[20];
+	uint32_t extintInactivityMs;
+} ubx_cfg_pm2_data_t;
+
+typedef struct
+{
+	uint8_t msgVer;
+	uint8_t numTrkChHw;
+	uint8_t numTrkChUse;
+	uint8_t numConfigBlocks;
+} ubx_cfg_gnss_data_t;
+
+typedef struct
+{
+	uint8_t gnssId;
+	uint8_t resTrkCh;
+	uint8_t maxTrkCh;
+	uint8_t reserved1;
+	bitfield32_t flags;
+} ubx_cfg_gnss_data_block_t;
+
 
 #endif /* GPS_UBLOX_H_ */
