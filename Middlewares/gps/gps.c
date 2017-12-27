@@ -28,7 +28,6 @@ I2C_HandleTypeDef* gps_hi2c;
 void gps_calc_checksum(ubx_packet_t* packet, uint8_t* checksum_a, uint8_t* checksum_b);
 gps_status_t gps_ubx_rx(ubx_packet_t* packet, uint32_t timeout);
 gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout);
-bool gps_ubx_rx_ack(uint32_t timeout);
 ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, uint8_t* data);
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length);
 gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length);
@@ -50,8 +49,8 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 
 	// Disable NMEA output over i2c
 	ubx_cfg_inf_data_t inf;
+	memset(&inf, 0, sizeof(ubx_cfg_inf_data_t)); // No messages at all
 	inf.protocolID = 0x01; // NMEA
-	memset(inf.infMsgMask, 0, 6*sizeof(bitfield8_t)); // No messages at all
 	inf.infMsgMask[1].byte = 0b00000111; // Enable the default messages over serial port 1
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_INF, (uint8_t*)&inf, sizeof(ubx_cfg_inf_data_t))) != GPS_OK) return stat;
 
@@ -59,7 +58,7 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	ubx_cfg_nav5_data_t nav5;
 	memset(&nav5, 0, sizeof(ubx_cfg_nav5_data_t));
 	nav5.mask.b0 = 1; // Apply dynamic model settings
-	nav5.dynModel = 4; // 0 = portable, 2 = stationary, 3 = pedestrian, 4 = automotive
+	nav5.dynModel = 0; // 0 = portable, 2 = stationary, 3 = pedestrian, 4 = automotive
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_NAV5, (uint8_t*)&nav5, sizeof(ubx_cfg_nav5_data_t))) != GPS_OK) return stat;
 
 	// Turn off SBAS and GLONLASS
@@ -77,8 +76,18 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 
 	// Configure power mode
 	ubx_cfg_pm2_data_t pm2;
-	memset(&pm2, 0 , sizeof(ubx_cfg_pm2_data_t));
-	//pm3.
+	memset(&pm2, 0, sizeof(ubx_cfg_pm2_data_t));
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
+
+	// Enable power save mode
+	ubx_cfg_rxm_data_t rxm;
+	memset(&rxm, 0, sizeof(ubx_cfg_rxm_data_t));
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
+	rxm.lpMode = 1; // Power save mode
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
+
+	memset(&rxm, 0, sizeof(ubx_cfg_rxm_data_t));
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 
 	return GPS_OK;
 }
@@ -252,6 +261,7 @@ gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout)
 	packet->sync_char_1 = UBX_SYNC_BYTE_1;
 	packet->sync_char_2 = UBX_SYNC_BYTE_2;
 	gps_calc_checksum(packet, &(packet->checksum_a), &(packet->checksum_b));
+	//packet->checksum_a = 9;
 
 	// Write sync chars, class, id, and length
 	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->sync_char_1), 6, TIME_LEFT(timeout, start));
@@ -277,18 +287,25 @@ gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout)
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length)
 {
 	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_CFG, id, length, data);
-	gps_status_t stat;
+	gps_status_t stat = GPS_ERR;
 	uint8_t retry = 0;
 
 	while(retry++ < NUM_RETRIES)
 	{
 		stat = gps_ubx_tx(&p, TX_TIMEOUT);
 		if(stat != GPS_OK) continue;
-		if(gps_ubx_rx_ack(RX_TIMEOUT))
-		{
-			stat = GPS_OK;
-			break;
-		}
+
+		// Get an ACK
+		ubx_packet_t p2;
+		p2.pkt_class = MSG_CLASS_ACK;
+		p2.id = MSG_ID_ACK_ACK;
+		uint8_t data[2];
+		p2.data = data;
+		p2.length = 2;
+		if((stat = gps_ubx_rx(&p2, RX_TIMEOUT)) == GPS_OK
+				&& data[0] == p.pkt_class
+				&& data[1] == p.id)
+			return GPS_OK;
 	}
 	return stat;
 }
@@ -297,7 +314,7 @@ gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length)
 {
 	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_CFG, id, 0, NULL);
 	ubx_packet_t p2 = gps_ubx_create_packet(MSG_CLASS_CFG, id, length, data);
-	gps_status_t stat;
+	gps_status_t stat = GPS_ERR;
 	uint8_t retry = 0;
 
 	while(retry++ < NUM_RETRIES)
@@ -308,20 +325,6 @@ gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length)
 	}
 
 	return stat;
-}
-
-
-/*
- * Returns an ack
- */
-bool gps_ubx_rx_ack(uint32_t timeout)
-{
-	ubx_packet_t p;
-	p.pkt_class = MSG_CLASS_ACK;
-	p.id = MSG_ID_ACK_ACK;
-	p.length = 0;
-	if(gps_ubx_rx(&p, timeout) == GPS_OK) return true;
-	else return false;
 }
 
 ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, uint8_t* data)

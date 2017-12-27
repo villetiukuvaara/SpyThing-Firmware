@@ -206,5 +206,11 @@ typedef struct
 	bitfield32_t flags;
 } ubx_cfg_gnss_data_block_t;
 
+typedef struct
+{
+	uint8_t reserved1;
+	uint8_t lpMode;
+} ubx_cfg_rxm_data_t;
+
 
 #endif /* GPS_UBLOX_H_ */
