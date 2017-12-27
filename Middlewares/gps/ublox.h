@@ -56,6 +56,7 @@
     #define MSG_ID_CFG_USB 0x1B
 	#define MSG_ID_CFG_INF 0x02
 	#define MSG_ID_CFG_GNSS 0x3E
+	#define MSG_ID_CFG_CFG 0x09
 #define MSG_CLASS_ESF 0x10
     #define MSG_ID_ESF_MEAS 0x02
     #define MSG_ID_ESF_STATUS 0x10
@@ -212,5 +213,18 @@ typedef struct
 	uint8_t lpMode;
 } ubx_cfg_rxm_data_t;
 
+typedef struct
+{
+	bitfield32_t clearMask;
+	bitfield32_t saveMask;
+	bitfield32_t loadMask;
+	//bitfield8_t deviceMask;
+} ubx_cfg_cfg_data_t;
+
+typedef struct
+{
+	bitfield16_t flags;
+	bitfield16_t pins;
+} ubx_cfg_ant_data_t;
 
 #endif /* GPS_UBLOX_H_ */

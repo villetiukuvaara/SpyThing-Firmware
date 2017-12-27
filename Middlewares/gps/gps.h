@@ -14,7 +14,8 @@
 #include <stdint.h>
 #include "minmea.h"
 
-#define FAKE_FIX
+#define GPS_CFG_DYNMODEL 0
+#define GPS_CFG_LOW_POWER_MODE 1
 
 #ifndef GPS_RESET_N_GPIO_Port
 #define GPS_RESET_N_GPIO_Port GPIOB

@@ -14,7 +14,7 @@
 #define TIME_LEFT(timeout, start) (timeout == HAL_MAX_DELAY ? HAL_MAX_DELAY : (timeout - (HAL_GetTick() - start)))
 #define NUM_RETRIES 5
 #define TX_TIMEOUT 1000
-#define RX_TIMEOUT 500
+#define RX_TIMEOUT 2000
 #define ATTEMPT_TX(packet, tries)
 
 uint8_t buffer[BUFFER_SIZE];
@@ -38,8 +38,8 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	gps_hi2c = hi2c;
 	gps_status_t stat;
 	uint16_t length;
-	//uint8_t retry;
-	//ubx_packet_t p;
+	uint8_t retry;
+	ubx_packet_t p;
 
 	// Hardware reset of the module
 	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
@@ -58,7 +58,7 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	ubx_cfg_nav5_data_t nav5;
 	memset(&nav5, 0, sizeof(ubx_cfg_nav5_data_t));
 	nav5.mask.b0 = 1; // Apply dynamic model settings
-	nav5.dynModel = 0; // 0 = portable, 2 = stationary, 3 = pedestrian, 4 = automotive
+	nav5.dynModel = GPS_CFG_DYNMODEL; // 0 = portable, 2 = stationary, 3 = pedestrian, 4 = automotive
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_NAV5, (uint8_t*)&nav5, sizeof(ubx_cfg_nav5_data_t))) != GPS_OK) return stat;
 
 	// Turn off SBAS and GLONLASS
@@ -83,11 +83,16 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	ubx_cfg_rxm_data_t rxm;
 	memset(&rxm, 0, sizeof(ubx_cfg_rxm_data_t));
 	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
-	rxm.lpMode = 1; // Power save mode
+	rxm.lpMode = GPS_CFG_LOW_POWER_MODE; // Power save mode
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 
-	memset(&rxm, 0, sizeof(ubx_cfg_rxm_data_t));
-	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
+	// Save config
+	ubx_cfg_cfg_data_t cfg;
+	memset(&cfg, 0, sizeof(ubx_cfg_cfg_data_t));
+	cfg.saveMask.bytes = 0b11111;
+	cfg.saveMask.b10 = 1; // Antenna config
+	cfg.clearMask.bytes = 0b1111100011111; // Clear everything before saving
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&cfg, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
 
 	return GPS_OK;
 }
@@ -101,9 +106,6 @@ gps_status_t gps_start()
 	uint8_t data = 0b10101010;
 	if(HAL_UART_Transmit(gps_huart, &data, 1, TX_TIMEOUT) != HAL_OK) return GPS_ERR;
 	HAL_Delay(1000);
-
-	ubx_cfg_nav5_data_t nav5;
-	gps_ubx_cfg_get(MSG_ID_CFG_NAV5, (uint8_t*)&nav5, sizeof(ubx_cfg_nav5_data_t));
 
 	return GPS_OK;
 }
@@ -321,7 +323,7 @@ gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length)
 	{
 		stat = gps_ubx_tx(&p, TX_TIMEOUT);
 		if(stat != GPS_OK) continue;
-		if(gps_ubx_rx(&p2, RX_TIMEOUT) == GPS_OK) break;
+		if((stat = gps_ubx_rx(&p2, RX_TIMEOUT)) == GPS_OK) return GPS_OK;
 	}
 
 	return stat;
