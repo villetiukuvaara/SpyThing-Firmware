@@ -116,6 +116,21 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	ubx_cfg_pm2_data_t pm2;
 	memset(&pm2, 0, sizeof(ubx_cfg_pm2_data_t));
 	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, 0, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
+	pm2.flags.b4 = 0; // select EXTINT0
+	//pm2.flags.b5 = 1; // Keep receiver awake as long as extint is high
+	pm2.flags.b6 = 0; // Do not force receiver to go to backup if extint is low
+	pm2.flags.b7 = 0; // No extint inactivity timeout
+	pm2.flags.b11 = 1; // Add extra wake cycles to update RTC
+	pm2.flags.b12 = 1; // Add extra wake cycles to update ephemeris
+	pm2.flags.b16 = 0; // receiver enters (Inactive) Awaiting Next Search state after failing acquisition
+	pm2.flags.bytes &= ~(uint32_t)(3<<17); // Oon/off power save mode (PSMOO)
+	pm2.updatePeriod = 3000; // Update every 3 seconds
+	pm2.searchPeriod = 10000; // Try to search again every 10 seconds if failed aqcuisition
+	pm2.gridOffset = 0;
+	pm2.onTime = 0; // Don't stay in tracking mode at all
+	pm2.minAcqTime = 0;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_PM2, (uint8_t*)&pm2, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
+
 
 	// Enable power save mode
 	ubx_cfg_rxm_data_t rxm;

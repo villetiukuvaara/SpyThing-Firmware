@@ -178,7 +178,7 @@ typedef struct
 {
 	uint8_t version;
 	uint8_t reserved1;
-	uint8_t masStartupStateDur;
+	uint8_t maxStartupStateDur;
 	uint8_t reserved2;
 	bitfield32_t flags;
 	uint32_t updatePeriod;
