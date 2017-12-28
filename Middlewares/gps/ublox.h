@@ -227,4 +227,37 @@ typedef struct
 	bitfield16_t pins;
 } ubx_cfg_ant_data_t;
 
+typedef struct
+{
+	uint8_t msgClass;
+	uint8_t msgID;
+	uint8_t rate;
+} ubx_cfg_msg_data_t;
+
+typedef struct
+{
+	uint8_t portID;
+	uint8_t reserved1;
+	bitfield16_t txReady;
+	bitfield32_t mode;
+	uint8_t reserved2[4];
+	bitfield16_t inProtoMask;
+	bitfield16_t outProtoMask;
+	bitfield16_t flags;
+	uint8_t reserved3[2];
+} ubx_cfg_prt_ddc_data_t;
+
+typedef struct
+{
+	uint8_t portID;
+	uint8_t reserved1;
+	bitfield16_t txReady;
+	bitfield32_t mode;
+	uint32_t baudRate;
+	bitfield16_t inProtoMask;
+	bitfield16_t outProtoMask;
+	bitfield16_t flags;
+	uint8_t reserved2[2];
+} ubx_cfg_prt_uart_data_t;
+
 #endif /* GPS_UBLOX_H_ */

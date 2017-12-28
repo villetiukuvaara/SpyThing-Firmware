@@ -8,6 +8,7 @@
 #include "gps.h"
 #include "ublox.h"
 #include <string.h>
+#include <stdlib.h>
 
 #define BUFFER_SIZE 512
 #define DEFAULT_DATA_SIZE 32
@@ -30,7 +31,7 @@ gps_status_t gps_ubx_rx(ubx_packet_t* packet, uint32_t timeout);
 gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout);
 ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, uint8_t* data);
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length);
-gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length);
+gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t poll_length, uint16_t data_length);
 
 gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, uint32_t refresh_period)
 {
@@ -40,6 +41,7 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	uint16_t length;
 	uint8_t retry;
 	ubx_packet_t p;
+	uint8_t data[128];
 
 	// Hardware reset of the module
 	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
@@ -48,11 +50,48 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	HAL_Delay(1000);
 
 	// Disable NMEA output over i2c
-	ubx_cfg_inf_data_t inf;
+	/*ubx_cfg_inf_data_t inf;
 	memset(&inf, 0, sizeof(ubx_cfg_inf_data_t)); // No messages at all
 	inf.protocolID = 0x01; // NMEA
 	inf.infMsgMask[1].byte = 0b00000111; // Enable the default messages over serial port 1
-	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_INF, (uint8_t*)&inf, sizeof(ubx_cfg_inf_data_t))) != GPS_OK) return stat;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_INF, (uint8_t*)&inf, sizeof(ubx_cfg_inf_data_t))) != GPS_OK) return stat;*/
+
+	//Disable UART
+	ubx_cfg_prt_uart_data_t prt_uart;
+	uint8_t* puart = (uint8_t*)&prt_uart;
+	*puart = 1;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PRT, puart, 1, sizeof(ubx_cfg_prt_uart_data_t))) != GPS_OK) return stat;
+	//prt_uart.mode.b0 = 0; // Disable
+	prt_uart.outProtoMask.bytes &= ~(uint16_t)0b100111;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_PRT, puart, sizeof(ubx_cfg_prt_uart_data_t))) != GPS_OK) return stat;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PRT, puart, 1, sizeof(ubx_cfg_prt_uart_data_t))) != GPS_OK) return stat;
+
+	ubx_cfg_prt_ddc_data_t prt_ddc;
+	uint8_t* pddc = (uint8_t*)&prt_ddc;
+	*pddc = 0;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PRT, pddc, 1, sizeof(ubx_cfg_prt_ddc_data_t))) != GPS_OK) return stat;
+	prt_ddc.flags.b1 = 0; // No extended timeout
+	prt_ddc.inProtoMask.bytes = 1; // Only UBX in
+	prt_ddc.outProtoMask.bytes = 1; // Only UBX out
+	prt_ddc.txReady.bytes = 0;
+	prt_ddc.txReady.bytes |= 1<<7; // Threshold of 8 bytes must be ready
+	prt_ddc.txReady.bytes |= 6<<2; // Use pin 6 for TX ready indication
+	prt_ddc.txReady.b0 = 1; // Enable TX ready GPIO output
+	prt_ddc.txReady.b1 = 0; // Active high
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_PRT, (uint8_t*)&prt_ddc, sizeof(ubx_cfg_prt_ddc_data_t))) != GPS_OK) return stat;
+
+	// Check that DDC port settings got applied
+	memset(&prt_ddc, 0, sizeof(ubx_cfg_prt_ddc_data_t));
+	HAL_Delay(100);
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PRT, (uint8_t*)&prt_ddc, 1, sizeof(ubx_cfg_prt_ddc_data_t))) != GPS_OK) return stat;
+	if(prt_ddc.inProtoMask.b0 != 1 || prt_ddc.outProtoMask.b0 != 1 || prt_ddc.txReady.b0 != 1) return GPS_ERR;
+
+	// Set UBX NAV message rates on I2C
+	ubx_cfg_msg_data_t msg;
+	msg.rate = 1;
+	msg.msgClass = MSG_CLASS_NAV;
+	msg.msgID = MSG_ID_NAV_PVT;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_MSG, (uint8_t*)&msg, sizeof(ubx_cfg_msg_data_t))) != GPS_OK) return stat;
 
 	// Set up device nav engine settings
 	ubx_cfg_nav5_data_t nav5;
@@ -62,8 +101,7 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_NAV5, (uint8_t*)&nav5, sizeof(ubx_cfg_nav5_data_t))) != GPS_OK) return stat;
 
 	// Turn off SBAS and GLONLASS
-	uint8_t data[128];
-	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_GNSS, data, 0xFFFF)) != GPS_OK) return stat;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_GNSS, data, 0, 0xFFFF)) != GPS_OK) return stat;
 	ubx_cfg_gnss_data_t* gnss = (ubx_cfg_gnss_data_t*)data;
 	ubx_cfg_gnss_data_block_t* gnss_block = (ubx_cfg_gnss_data_block_t*)(data + sizeof(ubx_cfg_gnss_data_t));
 	for(uint8_t i = 0; i < gnss->numConfigBlocks - 1; i++)
@@ -77,12 +115,12 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	// Configure power mode
 	ubx_cfg_pm2_data_t pm2;
 	memset(&pm2, 0, sizeof(ubx_cfg_pm2_data_t));
-	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, 0, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
 
 	// Enable power save mode
 	ubx_cfg_rxm_data_t rxm;
 	memset(&rxm, 0, sizeof(ubx_cfg_rxm_data_t));
-	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_RXM, (uint8_t*)&rxm, 0, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 	rxm.lpMode = GPS_CFG_LOW_POWER_MODE; // Power save mode
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 
@@ -254,7 +292,7 @@ gps_status_t gps_ubx_rx(ubx_packet_t* packet, uint32_t timeout)
  */
 gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout)
 {
-	ubx_packet_t rx;
+	//ubx_packet_t rx;
 	uint32_t start = HAL_GetTick();
 	HAL_StatusTypeDef stat;
 
@@ -263,27 +301,47 @@ gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout)
 	packet->sync_char_1 = UBX_SYNC_BYTE_1;
 	packet->sync_char_2 = UBX_SYNC_BYTE_2;
 	gps_calc_checksum(packet, &(packet->checksum_a), &(packet->checksum_b));
-	//packet->checksum_a = 9;
 
-	// Write sync chars, class, id, and length
-	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->sync_char_1), 6, TIME_LEFT(timeout, start));
+	// Create buffer to write it all out at once
+	// 8 extra bytes for header (6) and checksum (2)
+	uint16_t length = packet->length + 8;
+	uint8_t* buffer = malloc(length);
+	if(buffer == NULL) return GPS_ERR;
+
+	// Copy sync charc, class, id, and length into buffer
+	memcpy(buffer, &(packet->sync_char_1), 6);
+	// Copy data
+	if(packet->length != 0) memcpy(buffer + 6, packet->data, packet->length);
+	// Copy checksum
+	memcpy(buffer + 6 + packet->length, &(packet->checksum_a), 2);
+
+	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, buffer, length, TIME_LEFT(timeout, start));
+
+	free(buffer);
+
 	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-	if(stat != HAL_OK) return GPS_ERR;
+	else if(stat != HAL_OK) return GPS_ERR;
+	else return GPS_OK;
 
-	// Write data payload
-	if(packet->length > 0)
-	{
-		stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, packet->data, packet->length, TIME_LEFT(timeout, start));
-		if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-		if(stat != HAL_OK) return GPS_ERR;
-	}
-
-	// Write checksum
-	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->checksum_a), 2, TIME_LEFT(timeout, start));
-	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-	if(stat != HAL_OK) return GPS_ERR;
-
-	return GPS_OK;
+//	// Write sync chars, class, id, and length
+//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->sync_char_1), 6, TIME_LEFT(timeout, start));
+//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+//	if(stat != HAL_OK) return GPS_ERR;
+//
+//	// Write data payload
+//	if(packet->length > 0)
+//	{
+//		stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, packet->data, packet->length, TIME_LEFT(timeout, start));
+//		if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+//		if(stat != HAL_OK) return GPS_ERR;
+//	}
+//
+//	// Write checksum
+//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->checksum_a), 2, TIME_LEFT(timeout, start));
+//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+//	if(stat != HAL_OK) return GPS_ERR;
+//
+//	return GPS_OK;
 }
 
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length)
@@ -312,10 +370,13 @@ gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length)
 	return stat;
 }
 
-gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t length)
+gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t poll_length, uint16_t data_length)
 {
-	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_CFG, id, 0, NULL);
-	ubx_packet_t p2 = gps_ubx_create_packet(MSG_CLASS_CFG, id, length, data);
+	ubx_packet_t p;
+	if(poll_length != 0) p = gps_ubx_create_packet(MSG_CLASS_CFG, id, poll_length, data);
+	else p = gps_ubx_create_packet(MSG_CLASS_CFG, id, 0, NULL);
+
+	ubx_packet_t p2 = gps_ubx_create_packet(MSG_CLASS_CFG, id, data_length, data);
 	gps_status_t stat = GPS_ERR;
 	uint8_t retry = 0;
 
