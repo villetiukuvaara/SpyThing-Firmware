@@ -47,11 +47,15 @@
   */
 
 #include "fatfs.h"
+#include "stm32l4xx_hal.h"
+#include "gps.h"
 
 uint8_t retSD;    /* Return value for SD */
-char SD_Path[4];  /* SD logical drive path */
+char SD_Path[] = "0:";  /* SD logical drive path */
 
 /* USER CODE BEGIN Variables */
+
+extern RTC_HandleTypeDef hrtc;
 
 /* USER CODE END Variables */    
 
@@ -73,7 +77,30 @@ void MX_FATFS_Init(void)
 DWORD get_fattime(void)
 {
   /* USER CODE BEGIN get_fattime */
-  return 0;
+	RTC_TimeTypeDef time;
+	RTC_DateTypeDef date;
+	HAL_StatusTypeDef stat;
+	DWORD sd_time = 0;
+
+	if(gps_solution(NULL) == GPS_SOL_NONE) return 0;
+
+	stat = HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+	if(stat != HAL_OK)
+	{
+		HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+		return 0;
+	}
+	stat = HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+	if(stat != HAL_OK) return 0;
+
+	sd_time |= (0b1111111 & date.Year) << 25;
+	sd_time |= (0b1111 & date.Month) << 21;
+	sd_time |= (0b11111 & date.Date) << 16;
+	sd_time |= (0b11111 & time.Hours) << 11;
+	sd_time |= (0b111111 & time.Minutes) << 5;
+	sd_time |= 0b11111 & (time.Seconds/2);
+
+	return sd_time;
   /* USER CODE END get_fattime */  
 }
 

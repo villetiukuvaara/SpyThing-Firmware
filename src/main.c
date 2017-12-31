@@ -48,13 +48,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32l4xx_hal.h"
-#include "main_it.h"
-#include "fatfs.h"
-#include "retarget.h"
-#include "logger.h"
-#include "audio.h"
-#include "gps.h"
-#include <stdbool.h>
+#include "application.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -104,13 +98,8 @@ static void MX_I2C1_Init(void);
 /* USER CODE END PFP */
 
 /* USER CODE BEGIN 0 */
-bool rx_ready = false;
 
 /* USER CODE END 0 */
-
-uint8_t pc_buff[512];
-uint32_t pc_buff_head = 0, pc_buffer_tail = 0;
-bool rx = true;
 
 int main(void)
 {
@@ -137,7 +126,7 @@ int main(void)
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
 	//MX_DMA_Init();
-	//MX_SDMMC1_SD_Init();
+	MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
 	MX_USART3_UART_Init();
 	MX_UART4_Init();
@@ -148,123 +137,7 @@ int main(void)
 	MX_FATFS_Init();
 	MX_I2C1_Init();
 
-	RetargetInit(&huart4);
-
-	uint8_t newline = 30;
-	while(newline-- > 0)
-		printf("\n");
-
-	if(gps_initialize(&huart3, &hi2c1, &hrtc) != GPS_OK) Error_Handler();
-
-	gps_start();
-
-	gps_sol_t sol;
-	gps_status_t stat;
-	gps_solution_status_t sol_stat;
-
-	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, 0);
-
-	uint32_t cnt = 0;
-
-	do
-	{
-		cnt++;
-		printf("%u\n", cnt);
-		HAL_Delay(1000);
-		sol_stat = gps_solution(&sol);
-	} while(sol_stat == GPS_SOL_NONE);
-
-
-	RTC_TimeTypeDef time;
-	RTC_DateTypeDef date;
-	while(1)
-	{
-		printf("START\n");
-		gps_start();
-		HAL_Delay(10000);
-		HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
-		HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
-		printf("@ %02u:%02u", time.Hours, time.Minutes);
-		HAL_Delay(5000);
-		printf("STOP\n");
-		gps_stop();
-		HAL_Delay(2000);
-	}
-
-	while(1)
-	{
-		HAL_Delay(1000);
-		uint8_t p = HAL_GPIO_ReadPin(GPS_PIO6_GPIO_Port, GPS_PIO6_Pin);
-		if(p == GPIO_PIN_SET) printf("Pin set\n");
-		else printf("Pin not set\n");
-
-		if(cnt++ > 20)
-		{
-			printf("EXTINT...\n");
-			cnt = 0;
-			HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_SET);
-			printf("1. extint is %u\n", HAL_GPIO_ReadPin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin));
-			HAL_Delay(1000);
-			HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_RESET);
-			printf("2. extint is %u\n", HAL_GPIO_ReadPin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin));
-		}
-	}
-
-	bool stopped = false, fix = false;
-	uint32_t wait = 0;
-
-	while(1)
-	{
-		HAL_Delay(1000);
-
-		if(!stopped && fix && wait++ > 5)
-		{
-			gps_stop();
-			stopped = true;
-			wait = 0;
-			printf("-->stop\n");
-		}
-		else if(stopped && wait++ > 5)
-		{
-			gps_start();
-			stopped = false;
-			wait = 0;
-			printf("-->start\n");
-		}
-
-		//stat = gps_solution(&sol);
-		if(stat == GPS_OK)
-		{
-			if(sol.fixType != 0)
-			{
-				fix = true;
-				printf("(%li,%li) @ %02u:%02u\n", sol.lat, sol.lon, sol.hour, sol.min);
-			}
-			else
-			{
-				fix = false;
-				printf("no sol #%lu\n", cnt++);
-			}
-		}
-		else
-		{
-			printf("no response\n");
-		}
-	}
-
-	FATFS SDFatFs;  /* File system object for SD card logical drive */
-	FIL gps_file, audio_file;     /* File object */
-	//char SDPath[4]; /* SD card logical drive path */
-
-	if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK) Error_Handler();
-
-	if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK) Error_Handler();
-
-	if(f_open(&gps_file, "STM32.TXT", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) Error_Handler();
-	f_close(&gps_file);
-
-	/*##-11- Unlink the RAM disk I/O driver ####################################*/
-	FATFS_UnLinkDriver(SD_Path);
+	application();
 
 	while(1)
 	{

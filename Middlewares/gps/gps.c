@@ -72,6 +72,9 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	HAL_NVIC_DisableIRQ(GPS_I2C_EV_IRQn);
 	HAL_NVIC_DisableIRQ(GPS_I2C_ER_IRQn);
 
+	// Make sure extint signal is low
+	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_RESET);
+
 	// Hardware reset of the module
 	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
 	HAL_Delay(10);
@@ -287,7 +290,7 @@ gps_solution_status_t gps_solution(gps_sol_t* solution)
 {
 	if(gps_solution_status == GPS_SOL_NONE) return GPS_SOL_NONE;
 
-	memcpy(solution, &last_solution, sizeof(gps_sol_t));
+	if(solution != NULL) memcpy(solution, &last_solution, sizeof(gps_sol_t));
 
 	if(gps_solution_status == GPS_SOL_NEW)
 	{
@@ -599,7 +602,7 @@ void gps_i2c_rxcplt_callback()
 					time.Seconds = sol->sec < 60 ? sol->sec : 60; // Can be longer than 60
 					time.TimeFormat = RTC_HOURFORMAT_24;
 
-					date.Year = (uint8_t)(sol->year - 2000);
+					date.Year = (uint8_t)(sol->year - 1980);
 					date.Month = sol->month;
 					date.Date = sol->day;
 
