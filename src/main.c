@@ -48,6 +48,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32l4xx_hal.h"
+#include "main_it.h"
 #include "fatfs.h"
 #include "retarget.h"
 #include "logger.h"
@@ -157,7 +158,46 @@ int main(void)
 
 	gps_sol_t sol;
 	gps_status_t stat;
+
+	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, 0);
+
+	do
+	{
+		HAL_Delay(1000);
+		stat = gps_solution(&sol, 500);
+		if(stat == GPS_OK) printf("%lu\n",sol.iTOW);
+	} while(stat != GPS_OK || sol.fixType == 0);
+
+	while(1)
+	{
+		printf("START\n");
+		gps_start();
+		HAL_Delay(30000);
+		printf("STOP\n");
+		gps_stop();
+		HAL_Delay(2000);
+	}
+
 	uint32_t cnt = 0;
+
+	while(1)
+	{
+		HAL_Delay(1000);
+		uint8_t p = HAL_GPIO_ReadPin(GPS_PIO6_GPIO_Port, GPS_PIO6_Pin);
+		if(p == GPIO_PIN_SET) printf("Pin set\n");
+		else printf("Pin not set\n");
+
+		if(cnt++ > 20)
+		{
+			printf("EXTINT...\n");
+			cnt = 0;
+			HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_SET);
+			printf("1. extint is %u\n", HAL_GPIO_ReadPin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin));
+			HAL_Delay(1000);
+			HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_RESET);
+			printf("2. extint is %u\n", HAL_GPIO_ReadPin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin));
+		}
+	}
 
 	bool stopped = false, fix = false;
 	uint32_t wait = 0;
@@ -221,19 +261,6 @@ int main(void)
 	}
 
 
-}
-
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-	if(huart == &huart4)
-	{
-		pc_buff_head = (pc_buff_head+1)%512;
-		HAL_UART_Receive_IT(&huart4, pc_buff + pc_buff_head, 1);
-	}
-}
-
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
 }
 
 /** System Clock Configuration
@@ -315,29 +342,29 @@ void SystemClock_Config(void)
 
 	/**Enables the Clock Security System
 	 */
-	 //HAL_RCCEx_EnableLSECSS();
+	//HAL_RCCEx_EnableLSECSS();
 
 	/**Configure the main internal regulator output voltage
 	 */
-	 if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
-	 {
-		 _Error_Handler(__FILE__, __LINE__);
-	 }
+	if (HAL_PWREx_ControlVoltageScaling(PWR_REGULATOR_VOLTAGE_SCALE1) != HAL_OK)
+	{
+		_Error_Handler(__FILE__, __LINE__);
+	}
 
-	 /**Configure the Systick interrupt time
-	  */
-	 HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
+	/**Configure the Systick interrupt time
+	 */
+	HAL_SYSTICK_Config(HAL_RCC_GetHCLKFreq()/1000);
 
-	 /**Configure the Systick
-	  */
-	 HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
+	/**Configure the Systick
+	 */
+	HAL_SYSTICK_CLKSourceConfig(SYSTICK_CLKSOURCE_HCLK);
 
-	 /**Enable MSI Auto calibration
-	  */
-	 HAL_RCCEx_EnableMSIPLLMode();
+	/**Enable MSI Auto calibration
+	 */
+	HAL_RCCEx_EnableMSIPLLMode();
 
-	 /* SysTick_IRQn interrupt configuration */
-	 HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+	/* SysTick_IRQn interrupt configuration */
+	HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
 /* DFSDM1 init function */
@@ -652,12 +679,18 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(SWITCH_2_GPIO_Port, &GPIO_InitStruct);
 
-	/*Configure GPIO pins : GPS_EXTINT_Pin GPS_RESET_N_Pin RADIO_RESET_N_Pin */
-	GPIO_InitStruct.Pin = GPS_EXTINT_Pin|GPS_RESET_N_Pin|RADIO_RESET_N_Pin;
+	/*Configure GPIO pins : GPS_PIO6_Pin RADIO_DIO_4_Pin RADIO_DIO_5_Pin */
+	GPIO_InitStruct.Pin = GPS_PIO6_Pin|RADIO_DIO_4_Pin|RADIO_DIO_5_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+
+	/*Configure GPIO pin : GPS_EXTINT_Pin */
+	GPIO_InitStruct.Pin = GPS_EXTINT_Pin;
 	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+	HAL_GPIO_Init(GPS_EXTINT_GPIO_Port, &GPIO_InitStruct);
 
 	/*Configure GPIO pins : RADIO_DIO_2_Pin RADIO_DIO_3_Pin RADIO_DIO_0_Pin RADIO_DIO_1_Pin */
 	GPIO_InitStruct.Pin = RADIO_DIO_2_Pin|RADIO_DIO_3_Pin|RADIO_DIO_0_Pin|RADIO_DIO_1_Pin;
@@ -670,12 +703,6 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
 	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
 	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-	/*Configure GPIO pins : RADIO_DIO_4_Pin RADIO_DIO_5_Pin */
-	GPIO_InitStruct.Pin = RADIO_DIO_4_Pin|RADIO_DIO_5_Pin;
-	GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING_FALLING;
-	GPIO_InitStruct.Pull = GPIO_PULLDOWN;
-	HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 	/*Configure GPIO pin : PMIC_FAST_Pin */
 	GPIO_InitStruct.Pin = PMIC_FAST_Pin;
@@ -691,6 +718,20 @@ static void MX_GPIO_Init(void)
 	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 	GPIO_InitStruct.Alternate = GPIO_AF10_OTG_FS;
 	HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+	/*Configure GPIO pins : GPS_RESET_N_Pin RADIO_RESET_N_Pin */
+	GPIO_InitStruct.Pin = GPS_RESET_N_Pin|RADIO_RESET_N_Pin;
+	GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+	GPIO_InitStruct.Pull = GPIO_NOPULL;
+	GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+	HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+	/* EXTI interrupt init*/
+	HAL_NVIC_SetPriority(EXTI9_5_IRQn, 15, 0);
+	HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
+
+	HAL_NVIC_SetPriority(EXTI15_10_IRQn, 15, 0);
+	HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
 }
 

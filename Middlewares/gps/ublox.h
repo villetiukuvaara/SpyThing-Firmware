@@ -260,4 +260,25 @@ typedef struct
 	uint8_t reserved2[2];
 } ubx_cfg_prt_uart_data_t;
 
+typedef struct
+{
+	bitfield32_t pinSel;
+	bitfield32_t pinBank;
+	bitfield32_t pinDir;
+	bitfield32_t pinVal;
+	uint16_t noisePerMS;
+	uint16_t agcCnt;
+	uint8_t aStatus;
+	uint8_t aPower;
+	bitfield8_t flags;
+	uint8_t reserved1;
+	bitfield32_t usedMask;
+	uint8_t VP[17];
+	uint8_t jamInd;
+	uint8_t reserved2[2];
+	bitfield32_t pinIrq;
+	bitfield32_t pullH;
+	bitfield32_t pullL;
+} ubx_mon_hw_data_t;
+
 #endif /* GPS_UBLOX_H_ */

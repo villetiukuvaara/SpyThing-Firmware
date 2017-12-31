@@ -15,7 +15,7 @@
 #include "minmea.h"
 
 #define GPS_CFG_DYNMODEL 0
-#define GPS_CFG_LOW_POWER_MODE 1
+#define GPS_CFG_LOW_POWER_MODE 0
 
 #ifndef GPS_RESET_N_GPIO_Port
 #define GPS_RESET_N_GPIO_Port GPIOB
@@ -40,6 +40,9 @@
 #ifndef GPS_EXTINT_GPIO_Port
 #define GPS_EXTINT_GPIO_Port GPIOB
 #endif
+
+#define GPS_I2C_EV_IRQn I2C1_EV_IRQn
+#define GPS_I2C_ER_IRQn I2C1_ER_IRQn
 
 typedef struct minmea_sentence_rmc minmea_sentence_rmc_t;
 
@@ -175,6 +178,6 @@ void gps_i2c_txcplt_callback();
 void gps_i2c_error_callback();
 void gps_i2c_abort_callback();
 void gps_timepulse_callback();
-void gps_extint_callback();
+void gps_dio6_callback();
 
 #endif /* GPS_H_ */

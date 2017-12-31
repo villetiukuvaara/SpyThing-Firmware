@@ -18,12 +18,22 @@
 #define RX_TIMEOUT 2000
 #define ATTEMPT_TX(packet, tries)
 
-uint8_t buffer[BUFFER_SIZE];
-uint32_t pos;
-minmea_sentence_rmc_t gps_data;
+enum
+{
+	GPS_I2C_STOP,
+	GPS_I2C_WAIT,
+	GPS_I2C_SYNC1,
+	GPS_I2C_SYNC2,
+	GPS_I2C_HEADER,
+	GPS_I2C_DATA
+} gps_i2c_state;
+
+volatile bool running = false;
 
 UART_HandleTypeDef* gps_huart;
 I2C_HandleTypeDef* gps_hi2c;
+uint8_t gps_buffer[128];
+ubx_packet_t rx_packet;
 
 //Private functions
 void gps_calc_checksum(ubx_packet_t* packet, uint8_t* checksum_a, uint8_t* checksum_b);
@@ -32,6 +42,9 @@ gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout);
 ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, uint8_t* data);
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length);
 gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t poll_length, uint16_t data_length);
+gps_status_t gps_ubx_poll(uint8_t class, uint8_t id, uint8_t* data, uint16_t poll_length, uint16_t data_length);
+bool gps_tx_ready(void);
+
 
 gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, uint32_t refresh_period)
 {
@@ -39,9 +52,16 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	gps_hi2c = hi2c;
 	gps_status_t stat;
 	uint16_t length;
-	uint8_t retry;
-	ubx_packet_t p;
+	//uint8_t retry;
+	//ubx_packet_t p;
 	uint8_t data[128];
+
+	// Disable the IRQ for TX ready indicatino
+	HAL_NVIC_DisableIRQ(GPS_PIO6_EXTI_IRQn);
+
+	//Disable I2C interrupts
+	HAL_NVIC_DisableIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_DisableIRQ(GPS_I2C_ER_IRQn);
 
 	// Hardware reset of the module
 	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_RESET);
@@ -49,12 +69,25 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	HAL_GPIO_WritePin(GPS_RESET_N_GPIO_Port, GPS_RESET_N_Pin, GPIO_PIN_SET);
 	HAL_Delay(1000);
 
+	// Clear and load config
+	ubx_cfg_cfg_data_t cfg_clear;
+	memset(&cfg_clear, 0, sizeof(ubx_cfg_cfg_data_t));
+	cfg_clear.clearMask.bytes = 0b1111100011111;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&cfg_clear, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+	cfg_clear.clearMask.bytes = 0;
+	cfg_clear.loadMask.bytes = 0b1111100011111;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&cfg_clear, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+
+	ubx_mon_hw_data_t hw;
+	if((stat = gps_ubx_poll(MSG_CLASS_MON, MSG_ID_MON_HW, (uint8_t*)&hw, 0, sizeof(ubx_mon_hw_data_t))) != GPS_OK) return stat;
+
 	// Disable NMEA output over i2c
 	/*ubx_cfg_inf_data_t inf;
 	memset(&inf, 0, sizeof(ubx_cfg_inf_data_t)); // No messages at all
 	inf.protocolID = 0x01; // NMEA
 	inf.infMsgMask[1].byte = 0b00000111; // Enable the default messages over serial port 1
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_INF, (uint8_t*)&inf, sizeof(ubx_cfg_inf_data_t))) != GPS_OK) return stat;*/
+
 
 	//Disable UART
 	ubx_cfg_prt_uart_data_t prt_uart;
@@ -117,20 +150,22 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	memset(&pm2, 0, sizeof(ubx_cfg_pm2_data_t));
 	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, 0, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
 	pm2.flags.b4 = 0; // select EXTINT0
-	//pm2.flags.b5 = 1; // Keep receiver awake as long as extint is high
+	pm2.flags.b5 = 1; // Keep receiver awake as long as extint is high
 	pm2.flags.b6 = 0; // Do not force receiver to go to backup if extint is low
 	pm2.flags.b7 = 0; // No extint inactivity timeout
-	pm2.flags.b11 = 1; // Add extra wake cycles to update RTC
+	pm2.flags.b11 = 0; // Add extra wake cycles to update RTC
 	pm2.flags.b12 = 1; // Add extra wake cycles to update ephemeris
 	pm2.flags.b16 = 0; // receiver enters (Inactive) Awaiting Next Search state after failing acquisition
 	pm2.flags.bytes &= ~(uint32_t)(3<<17); // Oon/off power save mode (PSMOO)
-	pm2.updatePeriod = 3000; // Update every 3 seconds
+	pm2.flags.b17 = 1; //
+	pm2.updatePeriod = 10000; // Update every 15 seconds
 	pm2.searchPeriod = 10000; // Try to search again every 10 seconds if failed aqcuisition
 	pm2.gridOffset = 0;
-	pm2.onTime = 0; // Don't stay in tracking mode at all
-	pm2.minAcqTime = 0;
+	pm2.onTime = 1; // Don't stay in tracking mode at all
+	pm2.minAcqTime = 2;
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_PM2, (uint8_t*)&pm2, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
-
+	memset(&pm2, 0, sizeof(ubx_cfg_pm2_data_t));
+	if((stat = gps_ubx_cfg_get(MSG_ID_CFG_PM2, (uint8_t*)&pm2, 0, sizeof(ubx_cfg_pm2_data_t))) != GPS_OK) return stat;
 
 	// Enable power save mode
 	ubx_cfg_rxm_data_t rxm;
@@ -140,12 +175,23 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 
 	// Save config
-	ubx_cfg_cfg_data_t cfg;
-	memset(&cfg, 0, sizeof(ubx_cfg_cfg_data_t));
-	cfg.saveMask.bytes = 0b11111;
-	cfg.saveMask.b10 = 1; // Antenna config
-	cfg.clearMask.bytes = 0b1111100011111; // Clear everything before saving
-	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&cfg, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+	ubx_cfg_cfg_data_t save;
+	memset(&save, 0, sizeof(ubx_cfg_cfg_data_t));
+	save.saveMask.bytes = cfg_clear.loadMask.bytes = 0b1111100011111;
+	//cfg.saveMask.b10 = 1; // Antenna config
+	//save.clearMask.bytes = 0b1111100011111; // Clear everything before saving
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+
+	// Load saved config
+	//save.saveMask.bytes = 0;
+	//save.loadMask.bytes = 0b1111100011111;
+	//if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+
+	gps_i2c_state = GPS_I2C_STOP;
+
+	// Enable I2C IRQ
+	HAL_NVIC_EnableIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_EnableIRQ(GPS_I2C_ER_IRQn);
 
 	return GPS_OK;
 }
@@ -156,21 +202,61 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 gps_status_t gps_start()
 {
 	// Send data on UART 1 RX to wake up
-	uint8_t data = 0b10101010;
-	if(HAL_UART_Transmit(gps_huart, &data, 1, TX_TIMEOUT) != HAL_OK) return GPS_ERR;
-	HAL_Delay(1000);
+	//uint8_t data = 0b10101010;
+	//if(HAL_UART_Transmit(gps_huart, &data, 1, TX_TIMEOUT) != HAL_OK) return GPS_ERR;
+	//HAL_Delay(1000);
+	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_SET);
+	HAL_Delay(10);
+	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, GPIO_PIN_RESET);
+
+	/*while(HAL_GPIO_ReadPin(GPS_PIO6_GPIO_Port, GPS_PIO6_Pin) == GPIO_PIN_SET)
+	{
+		uint8_t data;
+		HAL_I2C_Master_Receive(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &data, 1, RX_TIMEOUT);
+	}*/
+
+	gps_i2c_state = GPS_I2C_WAIT;
+
+	// Enable I2C IRQ
+	uint32_t stat2 = HAL_I2C_GetState(gps_hi2c);
+	if(stat2 == HAL_I2C_STATE_RESET
+			|| stat2 == HAL_I2C_STATE_ERROR
+			|| stat2 == HAL_I2C_STATE_TIMEOUT
+			|| stat2 == HAL_I2C_STATE_ABORT
+			|| stat2 == HAL_I2C_STATE_BUSY)
+	{
+		if(HAL_I2C_Init(gps_hi2c) != HAL_OK) Error_Handler();
+	}
+
+	HAL_NVIC_EnableIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_EnableIRQ(GPS_I2C_ER_IRQn);
+
+	// Cause the interrupt to happen if there is already data ready
+	if(gps_tx_ready()) HAL_NVIC_SetPendingIRQ(GPS_PIO6_EXTI_IRQn);
+	// Enable the IRQ for TX ready indication
+	HAL_NVIC_EnableIRQ(GPS_PIO6_EXTI_IRQn);
+
 
 	return GPS_OK;
 }
 
 gps_status_t gps_stop()
 {
+	gps_i2c_state = GPS_I2C_STOP;
+
+	//Disable I2C interrupts
+	HAL_NVIC_DisableIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_DisableIRQ(GPS_I2C_ER_IRQn);
+
+	// Disable the IRQ for TX ready indication
+	HAL_NVIC_DisableIRQ(GPS_PIO6_EXTI_IRQn);
+
 	ubx_rxm_pmreq_data_t data;
 	memset(&data, 0, sizeof(ubx_rxm_pmreq_data_t));
 	data.duration = 0; // Forever
 	data.flags.b1 = 1;
 	data.flags.b2 = 1;
-	data.wakeupSources.b3 = 1; // Wakeup on activity on UART 1 RX
+	data.wakeupSources.b5 = 1; // Wakeup on EXTINT0 edge
 
 	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_RXM, MSG_ID_RXM_PMREQ, sizeof(ubx_rxm_pmreq_data_t), (uint8_t*)&data);
 
@@ -405,6 +491,26 @@ gps_status_t gps_ubx_cfg_get(uint8_t id, uint8_t* data, uint16_t poll_length, ui
 	return stat;
 }
 
+gps_status_t gps_ubx_poll(uint8_t class, uint8_t id, uint8_t* data, uint16_t poll_length, uint16_t data_length)
+{
+	ubx_packet_t p;
+	if(poll_length != 0) p = gps_ubx_create_packet(class, id, poll_length, data);
+	else p = gps_ubx_create_packet(class, id, 0, NULL);
+
+	ubx_packet_t p2 = gps_ubx_create_packet(class, id, data_length, data);
+	gps_status_t stat = GPS_ERR;
+	uint8_t retry = 0;
+
+	while(retry++ < NUM_RETRIES)
+	{
+		stat = gps_ubx_tx(&p, TX_TIMEOUT);
+		if(stat != GPS_OK) continue;
+		if((stat = gps_ubx_rx(&p2, RX_TIMEOUT)) == GPS_OK) return GPS_OK;
+	}
+
+	return stat;
+}
+
 ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, uint8_t* data)
 {
 	// Disable NMEA output over i2c
@@ -417,9 +523,79 @@ ubx_packet_t gps_ubx_create_packet(uint8_t class, uint8_t id, uint16_t length, u
 	return p;
 }
 
+bool gps_tx_ready(void)
+{
+	return HAL_GPIO_ReadPin(GPS_PIO6_GPIO_Port, GPS_PIO6_Pin);
+}
+
 void gps_i2c_rxcplt_callback()
 {
+	switch(gps_i2c_state)
+	{
+	case GPS_I2C_STOP: return;
+	case GPS_I2C_WAIT: // This shouldn't happen, but fall through
+	case GPS_I2C_SYNC1:
+		if(gps_buffer[0] == UBX_SYNC_BYTE_1) gps_i2c_state = GPS_I2C_SYNC2;
+		else if(gps_buffer[0] != 0xFF)
+		{
+			gps_i2c_state = GPS_I2C_SYNC1;
+		}
+		HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+		break;
 
+	case GPS_I2C_SYNC2:
+		if(gps_buffer[0] == UBX_SYNC_BYTE_2)
+		{
+			gps_i2c_state = GPS_I2C_HEADER;
+			HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 4);
+		}
+		else // Didn't get second sync byte
+		{
+			if(gps_tx_ready())
+			{
+				gps_i2c_state = GPS_I2C_SYNC1;
+				HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+			}
+			else
+			{
+				gps_i2c_state = GPS_I2C_WAIT;
+			}
+		}
+		break;
+
+	case GPS_I2C_HEADER:
+		gps_i2c_state = GPS_I2C_DATA;
+		rx_packet.pkt_class = gps_buffer[0];
+		rx_packet.id = gps_buffer[1];
+		rx_packet.length = *((uint16_t*)(gps_buffer + 2));
+		rx_packet.data = gps_buffer;
+		// 2 extra bytes to recieve checksum bytes
+		HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, rx_packet.length + 2);
+		break;
+	case GPS_I2C_DATA:
+		rx_packet.checksum_a = gps_buffer[rx_packet.length];
+		rx_packet.checksum_b = gps_buffer[rx_packet.length + 1];
+		uint8_t ck_a, ck_b;
+		gps_calc_checksum(&rx_packet, &ck_a, &ck_b);
+		if(rx_packet.checksum_a == ck_a && rx_packet.checksum_b == ck_b)
+		{
+			if(rx_packet.pkt_class == MSG_CLASS_NAV && rx_packet.id == MSG_ID_NAV_PVT)
+			{
+				gps_sol_t* sol;
+				sol = (gps_sol_t*)rx_packet.data;
+				printf("(%li,%li) @ %02u:%02u\n", sol->lat, sol->lon, sol->hour, sol->min);
+			}
+		}
+
+		// Look for next packet if data still ready
+		if(gps_tx_ready())
+		{
+			gps_i2c_state = GPS_I2C_SYNC1;
+			HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+		}
+		else gps_i2c_state = GPS_I2C_WAIT;
+		break;
+	}
 }
 
 void gps_i2c_txcplt_callback()
@@ -429,12 +605,29 @@ void gps_i2c_txcplt_callback()
 
 void gps_i2c_error_callback()
 {
-
+	uint32_t err = HAL_I2C_GetError(gps_hi2c);
+	if(err == HAL_I2C_ERROR_OVR)
+	{
+		printf("error\n");
+	}
+	//else Error_Handler();
+//	// Reinitialize I2C
+//	HAL_I2C_Init(gps_hi2c);
+//
+//	if(gps_i2c_state != GPS_I2C_STOP)
+//	{
+//		if(gps_tx_ready())
+//		{
+//			gps_i2c_state = GPS_I2C_SYNC1;
+//			HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+//		}
+//		else gps_i2c_state = GPS_I2C_WAIT;
+//	}
 }
 
 void gps_i2c_abort_callback()
 {
-
+	Error_Handler();
 }
 
 void gps_timepulse_callback()
@@ -442,7 +635,17 @@ void gps_timepulse_callback()
 
 }
 
-void gps_extint_callback()
+void gps_dio6_callback()
 {
-
+	switch(gps_i2c_state)
+	{
+	case GPS_I2C_WAIT:
+		//if(HAL_I2C_GetState())
+		//	HAL_I2C_Init();
+		gps_i2c_state = GPS_I2C_SYNC1;
+		HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+		break;
+	default:
+		break;
+	}
 }
