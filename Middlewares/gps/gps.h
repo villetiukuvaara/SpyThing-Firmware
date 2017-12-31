@@ -169,8 +169,15 @@ typedef struct
 	uint16_t magAcc;
 } gps_sol_t;
 
-gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, uint32_t refresh_period);
-gps_status_t gps_solution(gps_sol_t* solution, uint32_t timeout);
+typedef enum
+{
+	GPS_SOL_NONE,
+	GPS_SOL_OLD,
+	GPS_SOL_NEW
+} gps_solution_status_t;
+
+gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, RTC_HandleTypeDef* hrtc);
+gps_solution_status_t gps_solution(gps_sol_t* solution);
 gps_status_t gps_start();
 gps_status_t gps_stop();
 void gps_i2c_rxcplt_callback();

@@ -141,7 +141,7 @@ int main(void)
 	//MX_DFSDM1_Init();
 	MX_USART3_UART_Init();
 	MX_UART4_Init();
-	//MX_RTC_Init();
+	MX_RTC_Init();
 	//MX_SPI1_Init();
 	//MX_USB_OTG_FS_USB_Init();
 	//MX_I2C2_Init();
@@ -154,31 +154,42 @@ int main(void)
 	while(newline-- > 0)
 		printf("\n");
 
-	if(gps_initialize(&huart3, &hi2c1, 60000) != GPS_OK) Error_Handler();
+	if(gps_initialize(&huart3, &hi2c1, &hrtc) != GPS_OK) Error_Handler();
+
+	gps_start();
 
 	gps_sol_t sol;
 	gps_status_t stat;
+	gps_solution_status_t sol_stat;
 
 	HAL_GPIO_WritePin(GPS_EXTINT_GPIO_Port, GPS_EXTINT_Pin, 0);
 
+	uint32_t cnt = 0;
+
 	do
 	{
+		cnt++;
+		printf("%u\n", cnt);
 		HAL_Delay(1000);
-		stat = gps_solution(&sol, 500);
-		if(stat == GPS_OK) printf("%lu\n",sol.iTOW);
-	} while(stat != GPS_OK || sol.fixType == 0);
+		sol_stat = gps_solution(&sol);
+	} while(sol_stat == GPS_SOL_NONE);
 
+
+	RTC_TimeTypeDef time;
+	RTC_DateTypeDef date;
 	while(1)
 	{
 		printf("START\n");
 		gps_start();
-		HAL_Delay(30000);
+		HAL_Delay(10000);
+		HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+		HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+		printf("@ %02u:%02u", time.Hours, time.Minutes);
+		HAL_Delay(5000);
 		printf("STOP\n");
 		gps_stop();
 		HAL_Delay(2000);
 	}
-
-	uint32_t cnt = 0;
 
 	while(1)
 	{
@@ -221,7 +232,7 @@ int main(void)
 			printf("-->start\n");
 		}
 
-		stat = gps_solution(&sol, 500);
+		//stat = gps_solution(&sol);
 		if(stat == GPS_OK)
 		{
 			if(sol.fixType != 0)
@@ -274,13 +285,13 @@ void SystemClock_Config(void)
 
 	/**Configure LSE Drive Capability
 	 */
-	//__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
+	__HAL_RCC_LSEDRIVE_CONFIG(RCC_LSEDRIVE_LOW);
 
 	/**Initializes the CPU, AHB and APB busses clocks
 	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI//|RCC_OSCILLATORTYPE_LSE
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE
 			|RCC_OSCILLATORTYPE_MSI;
-	//RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+	RCC_OscInitStruct.LSEState = RCC_LSE_ON;
 	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
 	RCC_OscInitStruct.HSICalibrationValue = 16;
 	RCC_OscInitStruct.MSIState = RCC_MSI_ON;
@@ -312,7 +323,7 @@ void SystemClock_Config(void)
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	PeriphClkInit.PeriphClockSelection = /*RCC_PERIPHCLK_RTC|*/RCC_PERIPHCLK_USART3
+	PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_USART3
 			|RCC_PERIPHCLK_UART4|RCC_PERIPHCLK_SAI1
 			|RCC_PERIPHCLK_I2C1|RCC_PERIPHCLK_I2C2
 			|RCC_PERIPHCLK_DFSDM1|RCC_PERIPHCLK_USB
@@ -323,7 +334,7 @@ void SystemClock_Config(void)
 	PeriphClkInit.I2c2ClockSelection = RCC_I2C2CLKSOURCE_HSI;
 	PeriphClkInit.Sai1ClockSelection = RCC_SAI1CLKSOURCE_PLLSAI1;
 	PeriphClkInit.Dfsdm1ClockSelection = RCC_DFSDM1CLKSOURCE_PCLK;
-	//PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+	PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
 	PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_MSI;
 	PeriphClkInit.Sdmmc1ClockSelection = RCC_SDMMC1CLKSOURCE_MSI;
 	PeriphClkInit.PLLSAI1.PLLSAI1Source = RCC_PLLSOURCE_MSI;
@@ -338,11 +349,11 @@ void SystemClock_Config(void)
 		_Error_Handler(__FILE__, __LINE__);
 	}
 
-	//HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
+	HAL_RCCEx_EnableLSCO(RCC_LSCOSOURCE_LSE);
 
 	/**Enables the Clock Security System
 	 */
-	//HAL_RCCEx_EnableLSECSS();
+	HAL_RCCEx_EnableLSECSS();
 
 	/**Configure the main internal regulator output voltage
 	 */

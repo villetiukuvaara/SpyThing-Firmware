@@ -17,6 +17,8 @@
 #define TX_TIMEOUT 1000
 #define RX_TIMEOUT 2000
 #define ATTEMPT_TX(packet, tries)
+#define RTC_UPDATE (uint32_t)0xFFFFFFFF
+#define RTC_SYNCH_TIME 360000 // Update every hour
 
 enum
 {
@@ -32,8 +34,14 @@ volatile bool running = false;
 
 UART_HandleTypeDef* gps_huart;
 I2C_HandleTypeDef* gps_hi2c;
+RTC_HandleTypeDef* gps_hrtc;
 uint8_t gps_buffer[128];
 ubx_packet_t rx_packet;
+gps_sol_t last_solution;
+RTC_TimeTypeDef gps_solution_timestamp;
+RTC_DateTypeDef gps_solution_datestamp;
+gps_solution_status_t gps_solution_status;
+uint32_t rtc_timestamp = RTC_UPDATE;
 
 //Private functions
 void gps_calc_checksum(ubx_packet_t* packet, uint8_t* checksum_a, uint8_t* checksum_b);
@@ -46,10 +54,11 @@ gps_status_t gps_ubx_poll(uint8_t class, uint8_t id, uint8_t* data, uint16_t pol
 bool gps_tx_ready(void);
 
 
-gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, uint32_t refresh_period)
+gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, RTC_HandleTypeDef* hrtc)
 {
 	gps_huart = huart;
 	gps_hi2c = hi2c;
+	gps_hrtc = hrtc;
 	gps_status_t stat;
 	uint16_t length;
 	//uint8_t retry;
@@ -187,6 +196,7 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	//save.loadMask.bytes = 0b1111100011111;
 	//if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
 
+	gps_solution_status = GPS_SOL_NONE;
 	gps_i2c_state = GPS_I2C_STOP;
 
 	// Enable I2C IRQ
@@ -215,7 +225,8 @@ gps_status_t gps_start()
 		HAL_I2C_Master_Receive(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &data, 1, RX_TIMEOUT);
 	}*/
 
-	gps_i2c_state = GPS_I2C_WAIT;
+	if(gps_i2c_state == GPS_I2C_STOP)
+		gps_i2c_state = GPS_I2C_WAIT;
 
 	// Enable I2C IRQ
 	uint32_t stat2 = HAL_I2C_GetState(gps_hi2c);
@@ -272,25 +283,18 @@ gps_status_t gps_stop()
 	return GPS_OK;
 }
 
-gps_status_t gps_solution(gps_sol_t* solution, uint32_t timeout)
+gps_solution_status_t gps_solution(gps_sol_t* solution)
 {
-	uint32_t start = HAL_GetTick();
-	ubx_packet_t p = gps_ubx_create_packet(MSG_CLASS_NAV, MSG_ID_NAV_PVT, 0, NULL);
-	uint8_t retry = 0;
-	gps_status_t stat;
+	if(gps_solution_status == GPS_SOL_NONE) return GPS_SOL_NONE;
 
-	while(retry++ < NUM_RETRIES)
+	memcpy(solution, &last_solution, sizeof(gps_sol_t));
+
+	if(gps_solution_status == GPS_SOL_NEW)
 	{
-		stat = gps_ubx_tx(&p, TIME_LEFT(start, timeout));
-		if(stat == GPS_OK) break;
+		gps_solution_status = GPS_SOL_OLD;
+		return GPS_SOL_NEW;
 	}
-	if(stat != GPS_OK) return stat;
-
-	p.length = sizeof(gps_sol_t);
-	p.data = (uint8_t*)solution;
-	stat = gps_ubx_rx(&p, TIME_LEFT(timeout, start));
-
-	return stat;
+	else return GPS_SOL_OLD;
 }
 
 /*
@@ -424,25 +428,25 @@ gps_status_t gps_ubx_tx(ubx_packet_t* packet, uint32_t timeout)
 	else if(stat != HAL_OK) return GPS_ERR;
 	else return GPS_OK;
 
-//	// Write sync chars, class, id, and length
-//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->sync_char_1), 6, TIME_LEFT(timeout, start));
-//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-//	if(stat != HAL_OK) return GPS_ERR;
-//
-//	// Write data payload
-//	if(packet->length > 0)
-//	{
-//		stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, packet->data, packet->length, TIME_LEFT(timeout, start));
-//		if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-//		if(stat != HAL_OK) return GPS_ERR;
-//	}
-//
-//	// Write checksum
-//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->checksum_a), 2, TIME_LEFT(timeout, start));
-//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
-//	if(stat != HAL_OK) return GPS_ERR;
-//
-//	return GPS_OK;
+	//	// Write sync chars, class, id, and length
+	//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->sync_char_1), 6, TIME_LEFT(timeout, start));
+	//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+	//	if(stat != HAL_OK) return GPS_ERR;
+	//
+	//	// Write data payload
+	//	if(packet->length > 0)
+	//	{
+	//		stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, packet->data, packet->length, TIME_LEFT(timeout, start));
+	//		if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+	//		if(stat != HAL_OK) return GPS_ERR;
+	//	}
+	//
+	//	// Write checksum
+	//	stat = HAL_I2C_Master_Transmit(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, &(packet->checksum_a), 2, TIME_LEFT(timeout, start));
+	//	if(stat == HAL_TIMEOUT) return GPS_TIMEOUT;
+	//	if(stat != HAL_OK) return GPS_ERR;
+	//
+	//	return GPS_OK;
 }
 
 gps_status_t gps_ubx_cfg_set(uint8_t id, uint8_t* data, uint16_t length)
@@ -530,6 +534,8 @@ bool gps_tx_ready(void)
 
 void gps_i2c_rxcplt_callback()
 {
+	HAL_StatusTypeDef stat;
+
 	switch(gps_i2c_state)
 	{
 	case GPS_I2C_STOP: return;
@@ -581,9 +587,43 @@ void gps_i2c_rxcplt_callback()
 		{
 			if(rx_packet.pkt_class == MSG_CLASS_NAV && rx_packet.id == MSG_ID_NAV_PVT)
 			{
-				gps_sol_t* sol;
-				sol = (gps_sol_t*)rx_packet.data;
-				printf("(%li,%li) @ %02u:%02u\n", sol->lat, sol->lon, sol->hour, sol->min);
+				gps_sol_t* sol = (gps_sol_t*)gps_buffer;
+				if(sol->valid.b0 == 1 && sol->valid.b1 == 1) // Valid time
+				{
+					RTC_TimeTypeDef time;
+					RTC_DateTypeDef date;
+
+					time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+					time.Hours = sol->hour;
+					time.Minutes = sol->min;
+					time.Seconds = sol->sec < 60 ? sol->sec : 60; // Can be longer than 60
+					time.TimeFormat = RTC_HOURFORMAT_24;
+
+					date.Year = (uint8_t)(sol->year - 2000);
+					date.Month = sol->month;
+					date.Date = sol->day;
+
+					if(rtc_timestamp == RTC_UPDATE || HAL_GetTick() > rtc_timestamp + RTC_SYNCH_TIME)
+					{
+						stat = HAL_RTC_SetTime(gps_hrtc, &time, RTC_FORMAT_BIN);
+						if(stat != HAL_OK) Error_Handler();
+
+						stat = HAL_RTC_SetDate(gps_hrtc, &date, RTC_FORMAT_BIN);
+						if(stat != HAL_OK) Error_Handler();
+
+						rtc_timestamp = HAL_GetTick();
+					}
+
+					if(sol->fixType != 0) // Location fix
+					{
+						gps_solution_timestamp = time;
+						gps_solution_datestamp = date;
+						memcpy(&last_solution, gps_buffer, sizeof(gps_sol_t));
+
+						printf("(%li,%li) @ %02u:%02u\n", last_solution.lat, last_solution.lon, last_solution.hour, last_solution.min);
+						gps_solution_status = GPS_SOL_NEW;
+					}
+				}
 			}
 		}
 
@@ -611,18 +651,18 @@ void gps_i2c_error_callback()
 		printf("error\n");
 	}
 	//else Error_Handler();
-//	// Reinitialize I2C
-//	HAL_I2C_Init(gps_hi2c);
-//
-//	if(gps_i2c_state != GPS_I2C_STOP)
-//	{
-//		if(gps_tx_ready())
-//		{
-//			gps_i2c_state = GPS_I2C_SYNC1;
-//			HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
-//		}
-//		else gps_i2c_state = GPS_I2C_WAIT;
-//	}
+	//	// Reinitialize I2C
+	//	HAL_I2C_Init(gps_hi2c);
+	//
+	//	if(gps_i2c_state != GPS_I2C_STOP)
+	//	{
+	//		if(gps_tx_ready())
+	//		{
+	//			gps_i2c_state = GPS_I2C_SYNC1;
+	//			HAL_I2C_Master_Receive_IT(gps_hi2c, GPS_I2C_ADDRESS_SHIFT, gps_buffer, 1);
+	//		}
+	//		else gps_i2c_state = GPS_I2C_WAIT;
+	//	}
 }
 
 void gps_i2c_abort_callback()
