@@ -128,7 +128,7 @@ int main(void)
 	//MX_DMA_Init();
 	MX_SDMMC1_SD_Init();
 	//MX_DFSDM1_Init();
-	MX_USART3_UART_Init();
+	//MX_USART3_UART_Init();
 	MX_UART4_Init();
 	MX_RTC_Init();
 	//MX_SPI1_Init();
@@ -371,8 +371,12 @@ static void MX_I2C2_Init(void)
 }
 
 /* RTC init function */
+/* RTC init function */
 static void MX_RTC_Init(void)
 {
+
+	RTC_TimeTypeDef sTime;
+	RTC_DateTypeDef sDate;
 
 	/**Initialize RTC Only
 	 */
@@ -388,6 +392,39 @@ static void MX_RTC_Init(void)
 	{
 		_Error_Handler(__FILE__, __LINE__);
 	}
+
+	/**Initialize RTC and set the Time and Date
+	 */
+	if(HAL_RTCEx_BKUPRead(&hrtc, RTC_BKP_DR0) != 0x32F2)
+	{
+		sTime.Hours = 0;
+		sTime.Minutes = 0;
+		sTime.Seconds = 0;
+		sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+		sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+		if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
+
+		sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+		sDate.Month = RTC_MONTH_JANUARY;
+		sDate.Date = 1;
+		sDate.Year = 0;
+
+		if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK)
+		{
+			_Error_Handler(__FILE__, __LINE__);
+		}
+
+		HAL_RTCEx_BKUPWrite(&hrtc,RTC_BKP_DR0,0x32F2);
+	}
+	/**Enable the WakeUp
+	 */
+//	if (HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 15, RTC_WAKEUPCLOCK_CK_SPRE_16BITS) != HAL_OK)
+//	{
+//		_Error_Handler(__FILE__, __LINE__);
+//	}
 
 }
 

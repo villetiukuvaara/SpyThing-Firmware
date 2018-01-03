@@ -258,13 +258,6 @@ gps_status_t gps_stop()
 {
 	gps_i2c_state = GPS_I2C_STOP;
 
-	//Disable I2C interrupts
-	HAL_NVIC_DisableIRQ(GPS_I2C_EV_IRQn);
-	HAL_NVIC_DisableIRQ(GPS_I2C_ER_IRQn);
-
-	// Disable the IRQ for TX ready indication
-	HAL_NVIC_DisableIRQ(GPS_PIO6_EXTI_IRQn);
-
 	ubx_rxm_pmreq_data_t data;
 	memset(&data, 0, sizeof(ubx_rxm_pmreq_data_t));
 	data.duration = 0; // Forever
@@ -282,6 +275,16 @@ gps_status_t gps_stop()
 		if(stat == GPS_OK) break;
 	}
 	if(stat != GPS_OK) return stat;
+
+	//Disable I2C interrupts
+	HAL_NVIC_DisableIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_DisableIRQ(GPS_I2C_ER_IRQn);
+	HAL_NVIC_ClearPendingIRQ(GPS_I2C_EV_IRQn);
+	HAL_NVIC_ClearPendingIRQ(GPS_I2C_ER_IRQn);
+
+	// Disable the IRQ for TX ready indication
+	HAL_NVIC_DisableIRQ(GPS_PIO6_EXTI_IRQn);
+	HAL_NVIC_ClearPendingIRQ(GPS_PIO6_EXTI_IRQn);
 
 	return GPS_OK;
 }
@@ -622,8 +625,6 @@ void gps_i2c_rxcplt_callback()
 						gps_solution_timestamp = time;
 						gps_solution_datestamp = date;
 						memcpy(&last_solution, gps_buffer, sizeof(gps_sol_t));
-
-						printf("(%li,%li) @ %02u:%02u\n", last_solution.lat, last_solution.lon, last_solution.hour, last_solution.min);
 						gps_solution_status = GPS_SOL_NEW;
 					}
 				}
