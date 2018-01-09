@@ -14,6 +14,8 @@
 #include "gps.h"
 #include <stdbool.h>
 #include <string.h>
+#include "gpx.h"
+#include "locale.h"
 
 extern I2C_HandleTypeDef hi2c1;
 extern RTC_HandleTypeDef hrtc;
@@ -34,62 +36,89 @@ void application(void)
 
 	if(gps_initialize(&huart3, &hi2c1, &hrtc) != GPS_OK) Error_Handler();
 
+	setlocale(LC_ALL, "");
+
 	gps_start();
 
 	gps_sol_t sol;
 	gps_status_t stat;
 	gps_solution_status_t sol_stat;
 
-	uint32_t cnt = 0;
-
-	/*do
-	{
-		cnt++;
-		printf("%u\n", cnt);
-		HAL_Delay(1000);
-		sol_stat = gps_solution(&sol);
-	} while(sol_stat == GPS_SOL_NONE);*/
-
 	FATFS SDFatFs;  /* File system object for SD card logical drive */
 	FIL gps_file, audio_file;     /* File object */
+
+	while(!BSP_SD_IsDetected()) HAL_Delay(100);
+
+	for(uint8_t i = 0; i < 3; i++)
+	{
+		HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
+		HAL_Delay(200);
+		HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+		HAL_Delay(200);
+	}
+
 
 	if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK) Error_Handler();
 	//if(f_mkfs((TCHAR const*)SD_Path, 0, 0) != FR_OK) Error_Handler();
 
-	if(f_stat("gps.txt", NULL) != FR_OK)
-	{
-		if(f_open(&gps_file, "gps.txt", FA_CREATE_ALWAYS) != FR_OK) Error_Handler();
-		f_close(&gps_file);
-	}
+	char filename[16] = "gps1.gpx";
+	uint32_t cnt = 0;
 
-	while(1)
+	do
+	{
+		sprintf(filename, "gps%i.gpx", cnt);
+	} while(f_stat(filename, NULL) == FR_OK && ++cnt < 9);
+
+	if(cnt == 10) Error_Handler();
+
+	if(f_open(&gps_file, filename, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) Error_Handler();
+
+	if(!gpx_start(&gps_file)) Error_Handler();
+	if(!gpx_trkseg_start(&gps_file)) Error_Handler();
+
+	cnt = 0;
+	uint32_t cnt2 = 0;
+
+
+	while(cnt++ < 400)
 	{
 		sol_stat = gps_solution(&sol);
-		//if(sol_stat != GPS_SOL_NONE)
-		//{
-			if(f_open(&gps_file, "gps.txt", FA_WRITE) != FR_OK) Error_Handler();
-			if(f_lseek(&gps_file, f_size(&gps_file)) != FR_OK) Error_Handler();
+		if(sol_stat != GPS_SOL_NONE)
+		{
+			cnt++;
+			printf("%i: (%li,%li) @ %02u:%02u\n",
+					cnt, sol.lat, sol.lon, sol.hour, sol.min);
 
-			char wr[128];
-			sprintf(wr, "(%li,%li) @ %02u:%02u\n",
-					sol.lat, sol.lon, sol.hour, sol.min);
+//			if(f_open(&gps_file, "gps.txt", FA_WRITE) != FR_OK) Error_Handler();
+//			if(f_lseek(&gps_file, f_size(&gps_file)) != FR_OK) Error_Handler();
+//
+//			char wr[128];
+//			sprintf(wr, "(%li,%li) @ %02u:%02u\n",
+//					sol.lat, sol.lon, sol.hour, sol.min);
 
-			UINT length = strlen(wr), bw = 0;
+			if(!gpx_append_trkpt(&gps_file, &sol)) Error_Handler();
+			f_sync(&gps_file);
 
-			if(f_write(&gps_file, wr, length, &bw) != FR_OK) Error_Handler();
-			if(bw != length) Error_Handler();
-
-			f_close(&gps_file);
-
-			printf("Going to sleep\n");
+			//printf("Going to sleep\n");
 			//gps_stop();
-			stop();
-			HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 5, RTC_WAKEUPCLOCK_CK_SPRE_16BITS);
-			printf("Wake up");
-			gps_start();
-			HAL_Delay(5000);
-		//}
+			//stop();
+			//HAL_RTCEx_SetWakeUpTimer_IT(&hrtc, 5, RTC_WAKEUPCLOCK_CK_SPRE_16BITS);
+			//printf("Wake up");
+			//gps_start();
+			HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
+		}
+		else
+		{
+			printf("no solution %i\n", cnt2++);
+			HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+		}
+		HAL_Delay(3000);
 	}
+
+	if(!gpx_trkseg_end(&gps_file)) Error_Handler();
+	if(!gpx_end(&gps_file)) Error_Handler();
+
+	f_close(&gps_file);
 
 	/*##-11- Unlink the RAM disk I/O driver ####################################*/
 	FATFS_UnLinkDriver(SD_Path);
