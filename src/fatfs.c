@@ -82,7 +82,7 @@ DWORD get_fattime(void)
 	HAL_StatusTypeDef stat;
 	DWORD sd_time = 0;
 
-	if(gps_solution(NULL) == GPS_SOL_NONE) return 0;
+	if(gps_solution(NULL) == GPS_DATA_NONE) return 0;
 
 	stat = HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
 	if(stat != HAL_OK)

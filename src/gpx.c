@@ -8,6 +8,7 @@
 #include "gpx.h"
 #include <stdbool.h>
 #include "fatfs.h"
+#include <string.h>
 
 const char GPX_START[] =
 "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"

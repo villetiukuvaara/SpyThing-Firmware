@@ -40,8 +40,10 @@ ubx_packet_t rx_packet;
 gps_sol_t last_solution;
 RTC_TimeTypeDef gps_solution_timestamp;
 RTC_DateTypeDef gps_solution_datestamp;
-gps_solution_status_t gps_solution_status;
+gps_data_status_t gps_solution_status;
 uint32_t rtc_timestamp = RTC_UPDATE;
+ubx_nav_geofence_data_t geofence_data;
+gps_data_status_t gps_geofence_status;
 
 //Private functions
 void gps_calc_checksum(ubx_packet_t* packet, uint8_t* checksum_a, uint8_t* checksum_b);
@@ -138,6 +140,12 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	msg.msgID = MSG_ID_NAV_PVT;
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_MSG, (uint8_t*)&msg, sizeof(ubx_cfg_msg_data_t))) != GPS_OK) return stat;
 
+	msg.rate = 1;
+	msg.msgClass = MSG_CLASS_NAV;
+	msg.msgID = MSG_ID_NAV_GEOFENCE;
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_MSG, (uint8_t*)&msg, sizeof(ubx_cfg_msg_data_t))) != GPS_OK) return stat;
+
+
 	// Set up device nav engine settings
 	ubx_cfg_nav5_data_t nav5;
 	memset(&nav5, 0, sizeof(ubx_cfg_nav5_data_t));
@@ -199,7 +207,8 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	//save.loadMask.bytes = 0b1111100011111;
 	//if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
 
-	gps_solution_status = GPS_SOL_NONE;
+	gps_solution_status = GPS_DATA_NONE;
+	gps_geofence_status = GPS_DATA_NONE;
 	gps_i2c_state = GPS_I2C_STOP;
 
 	// Enable I2C IRQ
@@ -289,18 +298,85 @@ gps_status_t gps_stop()
 	return GPS_OK;
 }
 
-gps_solution_status_t gps_solution(gps_sol_t* solution)
+gps_data_status_t gps_solution(gps_sol_t* solution)
 {
-	if(gps_solution_status == GPS_SOL_NONE) return GPS_SOL_NONE;
+	if(gps_solution_status == GPS_DATA_NONE) return GPS_DATA_NONE;
 
 	if(solution != NULL) memcpy(solution, &last_solution, sizeof(gps_sol_t));
 
-	if(gps_solution_status == GPS_SOL_NEW)
+	if(gps_solution_status == GPS_DATA_NEW)
 	{
-		gps_solution_status = GPS_SOL_OLD;
-		return GPS_SOL_NEW;
+		gps_solution_status = GPS_DATA_OLD;
+		return GPS_DATA_NEW;
 	}
-	else return GPS_SOL_OLD;
+	else return GPS_DATA_OLD;
+}
+
+gps_status_t gps_set_geofences(gps_geofence_t *fences, uint8_t n_fences)
+{
+	if(n_fences > 4) return GPS_ERR;
+
+	gps_status_t stat;
+	ubx_cfg_geofence_data_t gf;
+	memset(&gf, 0, sizeof(ubx_cfg_geofence_data_t));
+	gf.version = 0;
+	gf.numFences = n_fences;
+	//gf.pioEnabled = 1;
+	//gf.pin = 11; // TIMEPULSE pin
+	//gf.pinPolarity = 1; // High means inside
+	gf.confLvl = 1; // 68% confidence
+
+	for(uint8_t i = 0; i < n_fences; i++)
+	{
+		memcpy(&gf.fences[i], &fences[i], sizeof(gps_geofence_t));
+	}
+
+	uint16_t size = sizeof(ubx_cfg_geofence_data_t) - (4 - n_fences)*sizeof(gps_geofence_t);
+
+	stat = gps_ubx_cfg_set(MSG_ID_CFG_GEOFENCE, (uint8_t *)&gf, size);
+	return stat;
+}
+
+gps_status_t gps_save_settings()
+{
+
+}
+
+/*
+ * Returns the first geofence that we're in, or -1
+ */
+gps_data_status_t gps_get_geofence(int8_t *inside)
+{
+	gps_data_status_t ret_val;
+
+	switch(gps_geofence_status)
+	{
+	case GPS_DATA_NEW:
+		gps_geofence_status = GPS_DATA_OLD;
+		ret_val = GPS_DATA_NEW;
+		break;
+
+	case GPS_DATA_OLD:
+		ret_val = GPS_DATA_OLD;
+		break;
+
+	case GPS_DATA_NONE:
+	default:
+		return GPS_DATA_NONE;
+	}
+
+	*inside = -1;
+
+	for(uint8_t i = 0; i < geofence_data.numFences; i++)
+	{
+		if(geofence_data.geofence_state[i].state == 1)
+		{
+			*inside = i;
+			break;
+		}
+	}
+
+	return ret_val;
 }
 
 /*
@@ -625,9 +701,15 @@ void gps_i2c_rxcplt_callback()
 						gps_solution_timestamp = time;
 						gps_solution_datestamp = date;
 						memcpy(&last_solution, gps_buffer, sizeof(gps_sol_t));
-						gps_solution_status = GPS_SOL_NEW;
+						gps_solution_status = GPS_DATA_NEW;
 					}
 				}
+			}
+			else if(rx_packet.pkt_class == MSG_CLASS_NAV && rx_packet.id == MSG_ID_NAV_GEOFENCE)
+			{
+				ubx_nav_geofence_data_t* gf = (ubx_nav_geofence_data_t*)gps_buffer;
+				memcpy(&geofence_data, gf, sizeof(ubx_nav_geofence_data_t));
+				gps_geofence_status = GPS_DATA_NEW;
 			}
 		}
 

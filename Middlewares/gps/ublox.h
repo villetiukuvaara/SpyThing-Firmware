@@ -8,6 +8,8 @@
 #ifndef GPS_UBLOX_H_
 #define GPS_UBLOX_H_
 
+#include "gps.h"
+
 #define GPS_I2C_ADDRESS ((uint8_t)0b1000010) //0x42
 #define GPS_I2C_ADDRESS_SHIFT (GPS_I2C_ADDRESS << 1)
 
@@ -56,6 +58,7 @@
     #define MSG_ID_CFG_USB 0x1B
 	#define MSG_ID_CFG_INF 0x02
 	#define MSG_ID_CFG_GNSS 0x3E
+	#define MSG_ID_CFG_GEOFENCE 0x69
 	#define MSG_ID_CFG_CFG 0x09
 #define MSG_CLASS_ESF 0x10
     #define MSG_ID_ESF_MEAS 0x02
@@ -92,6 +95,7 @@
     #define MSG_ID_NAV_VELECEF 0x11
     #define MSG_ID_NAV_VELNED 0x12
 	#define MSG_ID_NAV_PVT 0x07
+	#define MSG_ID_NAV_GEOFENCE 0x39
 #define MSG_CLASS_RXM 0x02
     #define MSG_ID_RXM_ALM 0x30
     #define MSG_ID_RXM_EPH 0x31
@@ -280,5 +284,32 @@ typedef struct
 	bitfield32_t pullH;
 	bitfield32_t pullL;
 } ubx_mon_hw_data_t;
+
+typedef struct
+{
+	uint8_t version;
+	uint8_t numFences;
+	uint8_t confLvl;
+	uint8_t reserved1[1];
+	uint8_t pioEnabled;
+	uint8_t pinPolarity;
+	uint8_t pin;
+	uint8_t reserved2[1];
+	gps_geofence_t fences[4]; // Note that there will be 0-4 of these!
+} ubx_cfg_geofence_data_t;
+
+typedef struct
+{
+	uint32_t iTOW;
+	uint8_t version;
+	uint8_t status;
+	uint8_t numFences;
+	uint8_t combState;
+	struct
+	{
+		uint8_t state;
+		uint8_t reserved1[1];
+	} geofence_state[4];
+} ubx_nav_geofence_data_t;
 
 #endif /* GPS_UBLOX_H_ */

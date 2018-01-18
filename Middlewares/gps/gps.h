@@ -171,15 +171,24 @@ typedef struct
 
 typedef enum
 {
-	GPS_SOL_NONE,
-	GPS_SOL_OLD,
-	GPS_SOL_NEW
-} gps_solution_status_t;
+	GPS_DATA_NONE,
+	GPS_DATA_OLD,
+	GPS_DATA_NEW
+} gps_data_status_t;
+
+typedef struct
+{
+	int32_t lat;
+	int32_t lon;
+	uint32_t radius;
+} gps_geofence_t;
 
 gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, RTC_HandleTypeDef* hrtc);
-gps_solution_status_t gps_solution(gps_sol_t* solution);
+gps_data_status_t gps_solution(gps_sol_t* solution);
 gps_status_t gps_start();
 gps_status_t gps_stop();
+gps_status_t gps_set_geofences(gps_geofence_t *fences, uint8_t n_fences);
+gps_data_status_t gps_get_geofence(int8_t *inside);
 void gps_i2c_rxcplt_callback();
 void gps_i2c_txcplt_callback();
 void gps_i2c_error_callback();
