@@ -13,12 +13,13 @@
 #define BUFFER_SIZE 512
 #define DEFAULT_DATA_SIZE 32
 #define TIME_LEFT(timeout, start) (timeout == HAL_MAX_DELAY ? HAL_MAX_DELAY : (timeout - (HAL_GetTick() - start)))
-#define NUM_RETRIES 5
+#define NUM_RETRIES 30
 #define TX_TIMEOUT 1000
 #define RX_TIMEOUT 2000
 #define ATTEMPT_TX(packet, tries)
 #define RTC_UPDATE (uint32_t)0xFFFFFFFF
 #define RTC_SYNCH_TIME 360000 // Update every hour
+#define SOLUTION_BUFFER_SIZE 128
 
 enum
 {
@@ -37,10 +38,11 @@ I2C_HandleTypeDef* gps_hi2c;
 RTC_HandleTypeDef* gps_hrtc;
 uint8_t gps_buffer[128];
 ubx_packet_t rx_packet;
-gps_sol_t last_solution;
+gps_sol_t solutions[SOLUTION_BUFFER_SIZE];
 RTC_TimeTypeDef gps_solution_timestamp;
 RTC_DateTypeDef gps_solution_datestamp;
-gps_data_status_t gps_solution_status;
+//gps_data_status_t gps_solution_status;
+uint32_t solutions_tail, solutions_head;
 uint32_t rtc_timestamp = RTC_UPDATE;
 ubx_nav_geofence_data_t geofence_data;
 gps_data_status_t gps_geofence_status;
@@ -195,25 +197,27 @@ gps_status_t gps_initialize(UART_HandleTypeDef* huart, I2C_HandleTypeDef* hi2c, 
 	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_RXM, (uint8_t*)&rxm, sizeof(ubx_cfg_rxm_data_t))) != GPS_OK) return stat;
 
 	// Save config
-	ubx_cfg_cfg_data_t save;
-	memset(&save, 0, sizeof(ubx_cfg_cfg_data_t));
-	save.saveMask.bytes = cfg_clear.loadMask.bytes = 0b1111100011111;
+	//ubx_cfg_cfg_data_t save;
+	//memset(&save, 0, sizeof(ubx_cfg_cfg_data_t));
+	//save.saveMask.bytes = cfg_clear.loadMask.bytes = 0b1111100011111;
 	//cfg.saveMask.b10 = 1; // Antenna config
 	//save.clearMask.bytes = 0b1111100011111; // Clear everything before saving
-	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+	//if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
 
 	// Load saved config
 	//save.saveMask.bytes = 0;
 	//save.loadMask.bytes = 0b1111100011111;
 	//if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
 
-	gps_solution_status = GPS_DATA_NONE;
+	//gps_solution_status = GPS_DATA_NONE;
+	solutions_head = 0;
+	solutions_tail = 0;
 	gps_geofence_status = GPS_DATA_NONE;
 	gps_i2c_state = GPS_I2C_STOP;
 
 	// Enable I2C IRQ
-	HAL_NVIC_EnableIRQ(GPS_I2C_EV_IRQn);
-	HAL_NVIC_EnableIRQ(GPS_I2C_ER_IRQn);
+	//HAL_NVIC_EnableIRQ(GPS_I2C_EV_IRQn);
+	//HAL_NVIC_EnableIRQ(GPS_I2C_ER_IRQn);
 
 	return GPS_OK;
 }
@@ -300,16 +304,24 @@ gps_status_t gps_stop()
 
 gps_data_status_t gps_solution(gps_sol_t* solution)
 {
-	if(gps_solution_status == GPS_DATA_NONE) return GPS_DATA_NONE;
+//	if(gps_solution_status == GPS_DATA_NONE) return GPS_DATA_NONE;
+//
+//	if(solution != NULL) memcpy(solution, &solutions, sizeof(gps_sol_t));
+//
+//	if(gps_solution_status == GPS_DATA_NEW)
+//	{
+//		gps_solution_status = GPS_DATA_OLD;
+//		return GPS_DATA_NEW;
+//	}
+//	else return GPS_DATA_OLD;
 
-	if(solution != NULL) memcpy(solution, &last_solution, sizeof(gps_sol_t));
-
-	if(gps_solution_status == GPS_DATA_NEW)
+	if(solutions_head != solutions_tail)
 	{
-		gps_solution_status = GPS_DATA_OLD;
+		memcpy(solution, &solutions[solutions_tail], sizeof(gps_sol_t));
+		solutions_tail = (solutions_tail + 1)%SOLUTION_BUFFER_SIZE;
 		return GPS_DATA_NEW;
 	}
-	else return GPS_DATA_OLD;
+	else return GPS_DATA_NONE;
 }
 
 gps_status_t gps_set_geofences(gps_geofence_t *fences, uint8_t n_fences)
@@ -339,7 +351,16 @@ gps_status_t gps_set_geofences(gps_geofence_t *fences, uint8_t n_fences)
 
 gps_status_t gps_save_settings()
 {
+	gps_status_t stat;
 
+	ubx_cfg_cfg_data_t save;
+	memset(&save, 0, sizeof(ubx_cfg_cfg_data_t));
+	save.saveMask.bytes = 0b1111100011111;
+	//cfg.saveMask.b10 = 1; // Antenna config
+	//save.clearMask.bytes = 0b1111100011111; // Clear everything before saving
+	if((stat = gps_ubx_cfg_set(MSG_ID_CFG_CFG, (uint8_t*)&save, sizeof(ubx_cfg_cfg_data_t))) != GPS_OK) return stat;
+
+	return GPS_OK;
 }
 
 /*
@@ -700,8 +721,10 @@ void gps_i2c_rxcplt_callback()
 					{
 						gps_solution_timestamp = time;
 						gps_solution_datestamp = date;
-						memcpy(&last_solution, gps_buffer, sizeof(gps_sol_t));
-						gps_solution_status = GPS_DATA_NEW;
+						//memcpy(&solutions, gps_buffer, sizeof(gps_sol_t));
+						//gps_solution_status = GPS_DATA_NEW;
+						memcpy(&solutions[solutions_head], &gps_buffer, sizeof(gps_sol_t));
+						solutions_head = (solutions_head + 1)%SOLUTION_BUFFER_SIZE;
 					}
 				}
 			}

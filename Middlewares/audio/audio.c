@@ -17,26 +17,37 @@ wave_sample_t SD_buffers[2][AUDIO_SD_BUFFER_LENGTH];
 bool audio_ready = false;
 uint32_t SD_buffer_pos = 0;
 uint32_t SD_buffer_num = 0;
+FIL* audio_file;
+uint32_t total_samples;
 
 
-uint8_t audio_init(void)
+uint8_t audio_init()
 {
 	return BSP_AUDIO_IN_Init(AUDIO_SAMPLING_FREQUENCY, 16, 1);
 }
 
-uint8_t audio_record(FIL *file, uint32_t millis, bool append)
+uint8_t audio_record_init(FIL *file)
 {
+	audio_file = file;
+	total_samples = 0;
+	return AUDIO_OK;
+}
+
+uint8_t audio_record(uint32_t millis)
+{
+	DWORD fptr = f_tell(audio_file);
+
 	// Expand file in advance to make writes faster
-	FRESULT res = f_lseek(file, (AUDIO_SAMPLING_FREQUENCY/1000)*millis);
+	FRESULT res = f_lseek(audio_file, (AUDIO_SAMPLING_FREQUENCY/1000)*millis + fptr);
 	if(res != FR_OK) return AUDIO_ERROR;
 
-	res = f_lseek(file, 0);
+	res = f_lseek(audio_file, fptr);
 	if(res != FR_OK) return AUDIO_ERROR;
 
 	if(BSP_AUDIO_IN_Record((uint16_t*)PCM_buffer, 0) != AUDIO_OK) return AUDIO_ERROR;
 
 	uint32_t start = HAL_GetTick();
-	uint32_t total_samples = 0, current_samples = 0;
+	uint32_t current_samples = 0;
 
 	while(HAL_GetTick() < start + millis)
 	{
@@ -50,7 +61,7 @@ uint8_t audio_record(FIL *file, uint32_t millis, bool append)
 			SD_buffer_num = (SD_buffer_num + 1)%2;
 			audio_ready = false;
 
-			if(logger_wav_append(file, current_samples, SD_buffers[SD_buffer_num]) != LOGGER_OK)
+			if(logger_wav_append(audio_file, current_samples, SD_buffers[SD_buffer_num]) != LOGGER_OK)
 			{
 				BSP_AUDIO_IN_Stop();
 				return AUDIO_ERROR;
@@ -59,9 +70,14 @@ uint8_t audio_record(FIL *file, uint32_t millis, bool append)
 	}
 
 	BSP_AUDIO_IN_Stop();
-	if(logger_wav_write_header(file, AUDIO_SAMPLING_FREQUENCY, 1, total_samples) != LOGGER_OK) return AUDIO_ERROR;
 
 	return AUDIO_OK;
+}
+
+uint8_t audio_record_end()
+{
+	if(logger_wav_write_header(audio_file, AUDIO_SAMPLING_FREQUENCY, 1, total_samples) != LOGGER_OK) return AUDIO_ERROR;
+	else return AUDIO_OK;
 }
 
 /**

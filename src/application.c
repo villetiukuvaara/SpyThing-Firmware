@@ -27,6 +27,9 @@ extern SD_HandleTypeDef hsd1;
 extern RTC_HandleTypeDef hrtc;
 
 #define SETTINGS_STRING_LENGTH 16
+#define LOG_FILE "spything.log"
+#define LOG(x) log_write(LOG_FILE "\n", x)
+#define ERROR_HANDLER_LOG(x) do { LOG(x); Error_Handler(); } while(0);
 
 typedef struct
 {
@@ -63,6 +66,8 @@ typedef struct
 	uint8_t n_positions;
 	bool assist_time;
 	bool assist_pos;
+	uint8_t gpx_prefix[16];
+	uint8_t wav_prefix[16];
 } settings_t;
 settings_t settings_loaded;
 
@@ -84,26 +89,22 @@ const setting_t settings[] =
 		NEW_SETTING("radius3", &settings_loaded.geofence_radii[3], UINT32),
 		NEW_SETTING("n_pos", &settings_loaded.n_positions, UINT8),
 		NEW_SETTING("assist_time", &settings_loaded.assist_time, BOOL),
-		NEW_SETTING("assist_pos", &settings_loaded.assist_pos, BOOL)
+		NEW_SETTING("assist_pos", &settings_loaded.assist_pos, BOOL),
+		NEW_SETTING("gpx_prefix", &settings_loaded.gpx_prefix, STRING),
+		NEW_SETTING("wav_prefix", &settings_loaded.wav_prefix, STRING)
 };
 
 void stop(void);
 bool load_settings(void);
+bool log_write(char *path, char *string);
 
 void application(void)
 {
 	RetargetInit(&huart4);
 
-	uint8_t newline = 30;
-	while(newline-- > 0)
-		printf("\n");
-
-	gps_sol_t sol;
-	gps_status_t stat;
-	gps_data_status_t gps_stat;
-
 	FATFS SDFatFs;  /* File system object for SD card logical drive */
-	FIL gps_file;     /* File object */
+	FIL gpx_file, wav_file;     /* File object */
+	FRESULT fr;
 
 	while(!BSP_SD_IsDetected()) HAL_Delay(100);
 
@@ -115,81 +116,164 @@ void application(void)
 		HAL_Delay(200);
 	}
 
-	if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK) Error_Handler();
+	if(f_mount(&SDFatFs, (TCHAR const*)SD_Path, 0) != FR_OK) ERROR_HANDLER_LOG("Failed to mount SD Card");
 
-	if(!load_settings()) Error_Handler();
+	if(!load_settings()) ERROR_HANDLER_LOG("Failed to mount load settings");
 
+	if(gps_initialize(&huart3, &hi2c1, &hrtc) != GPS_OK) ERROR_HANDLER_LOG("Failed to initialize GPS");
 
-	if(gps_initialize(&huart3, &hi2c1, &hrtc) != GPS_OK) Error_Handler();
+	if(gps_set_geofences(geofences, settings_loaded.n_positions) != GPS_OK) ERROR_HANDLER_LOG("Failed to set geofences");
 
-	//setlocale(LC_ALL, "");
+	if(gps_save_settings() != GPS_OK) ERROR_HANDLER_LOG("Failed to save GPS settings");
 
-	if(gps_set_geofences(geofences, settings_loaded.n_positions) != GPS_OK) Error_Handler();
+	bool run = true;
 
-	gps_start();
-
-	char filename[16] = "gps1.gpx";
-	uint32_t cnt = 0;
-
-	do
+	while(1)
 	{
-		sprintf(filename, "gps%i.gpx", cnt);
-	} while(f_stat(filename, NULL) == FR_OK && ++cnt < 9);
+		printf("Waiting to start... ");
+		while(HAL_GPIO_ReadPin(SWITCH_1_GPIO_Port, SWITCH_1_Pin) == GPIO_PIN_RESET);
+		HAL_Delay(10); // Debouncing
+		if(HAL_GPIO_ReadPin(SWITCH_1_GPIO_Port, SWITCH_1_Pin) == GPIO_PIN_RESET) continue;
+		printf("starting.\n");
 
-	if(cnt == 10) Error_Handler();
+		printf("Creating GPX file... ");
 
-	if(f_open(&gps_file, filename, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) Error_Handler();
-
-	if(!gpx_start(&gps_file)) Error_Handler();
-	if(!gpx_trkseg_start(&gps_file)) Error_Handler();
-
-	cnt = 0;
-	uint32_t cnt2 = 0;
-
-
-	while(cnt++ < 400)
-	{
-		gps_stat = gps_solution(&sol);
-		if(gps_stat != GPS_DATA_NONE)
+		char path[16];
+		uint32_t file_cnt = 0;
+		do
 		{
-			cnt++;
-			printf("%i: (%li,%li) @ %02u:%02u\n",
-					cnt, sol.lat, sol.lon, sol.hour, sol.min);
+			path[0] = '\0';
+			sprintf(path, "%s%u.gpx", (char *)settings_loaded.gpx_prefix, file_cnt);
+			fr = f_stat(path, NULL);
+		} while(fr == FR_OK && file_cnt++ < 100);
 
-			if(!gpx_append_trkpt(&gps_file, &sol)) Error_Handler();
-			f_sync(&gps_file);
+		if(fr == FR_OK) ERROR_HANDLER_LOG("Too many GPX files");
+
+		fr = f_open(&gpx_file, path, FA_WRITE | FA_CREATE_ALWAYS);
+		if(fr != FR_OK) ERROR_HANDLER_LOG("Failed to open new GPX file");
+
+		if(!gpx_start(&gpx_file)) ERROR_HANDLER_LOG("Failed to write GPX header");
+		if(!gpx_trkseg_start(&gpx_file)) ERROR_HANDLER_LOG("Failed to start GPX track segment");
+
+		printf("done.\n");
+
+		gps_start();
+
+		bool record_audio = false;
+		uint32_t audio_length;
+
+		run = true;
+
+		while(run)
+		{
+			gps_sol_t sol;
+			gps_data_status_t data_stat;
 
 			HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_SET);
-		}
-		else
-		{
-			printf("no solution %i\n", cnt2++);
-			HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
-		}
 
-		int8_t gf;
-		gps_stat = gps_get_geofence(&gf);
-		if(gps_stat != GPS_DATA_NONE)
-		{
-			if(gf >= 0)
+			data_stat = gps_solution(&sol);
+
+			RTC_DateTypeDef date;
+			RTC_TimeTypeDef time;
+			HAL_RTC_GetTime(&hrtc, &time, RTC_FORMAT_BIN);
+			HAL_RTC_GetDate(&hrtc, &date, RTC_FORMAT_BIN);
+
+			if(data_stat == GPS_DATA_NEW)
 			{
-				printf("inside geofence #%i\n", gf);
+
+				printf("(%li,%li) @ %02u:%02u\n",
+									sol.lat, sol.lon, time.Hours, time.Minutes);
+
+				gpx_append_trkpt(&gpx_file, &sol);
+
+
+				while(gps_solution(&sol) == GPS_DATA_NEW)
+				{
+					gpx_append_trkpt(&gpx_file, &sol);
+				}
+
+				int8_t gf;
+				if(HAL_GPIO_ReadPin(SWITCH_2_GPIO_Port, SWITCH_2_Pin) == GPIO_PIN_SET
+						&& settings_loaded.audio_time > 0
+						&& gps_get_geofence(&gf) == GPS_DATA_NEW)
+				{
+					if(gf >= 0 && !record_audio) // Inside geofence
+					{
+						// Start new audio file
+						file_cnt = 0;
+						do
+						{
+							path[0] = '\0';
+							sprintf(path, "%s%u-%u.wav", settings_loaded.wav_prefix, gf, file_cnt);
+							fr = f_stat(path, NULL);
+						} while(fr == FR_OK && file_cnt++ < 100);
+
+						if(fr == FR_OK)
+						{
+							LOG("Too many WAV files");
+							settings_loaded.audio_time = 0;
+						}
+						else
+						{
+							fr = f_open(&wav_file, path, FA_WRITE | FA_CREATE_ALWAYS);
+							if(fr != FR_OK) LOG("Failed to open new WAV file");
+							else
+							{
+								audio_init();
+								audio_record_init(&wav_file);
+								audio_length = 0;
+ 								record_audio = true;
+							}
+						}
+					}
+				}
+			}
+			else printf("(---,---) @ %02u:%02u\n", time.Hours, time.Minutes);
+
+			if(record_audio)
+			{
+				audio_record(settings_loaded.interval);
+				audio_length += settings_loaded.interval;
+
+				if(audio_length > settings_loaded.audio_time)
+				{
+					audio_record_end();
+					record_audio = false;
+					f_close(&wav_file);
+				}
 			}
 			else
 			{
-				printf("not inside geofence\n");
+				HAL_Delay(settings_loaded.interval/2);
+				HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+				HAL_Delay(settings_loaded.interval/2);
+			}
+
+			if(HAL_GPIO_ReadPin(SWITCH_1_GPIO_Port, SWITCH_1_Pin) == GPIO_PIN_RESET)
+			{
+				HAL_Delay(10); // Debouncing
+				if(HAL_GPIO_ReadPin(SWITCH_1_GPIO_Port, SWITCH_1_Pin) == GPIO_PIN_RESET)
+				{
+					if(!gpx_trkseg_end(&gpx_file)) ERROR_HANDLER_LOG("Failed to end track segment");
+
+					if(!gpx_end(&gpx_file)) ERROR_HANDLER_LOG("Failed to end GPX file");
+
+					f_close(&gpx_file);
+
+					if(record_audio)
+					{
+						audio_record_end();
+						record_audio = false;
+						f_close(&wav_file);
+					}
+
+					HAL_GPIO_WritePin(LED_1_GPIO_Port, LED_1_Pin, GPIO_PIN_RESET);
+					run = false;
+				}
 			}
 		}
-
-		HAL_Delay(3000);
 	}
 
-	if(!gpx_trkseg_end(&gps_file)) Error_Handler();
-	if(!gpx_end(&gps_file)) Error_Handler();
-
-	f_close(&gps_file);
-
-	/*##-11- Unlink the RAM disk I/O driver ####################################*/
 	FATFS_UnLinkDriver(SD_Path);
 }
 
@@ -412,6 +496,40 @@ bool load_settings(void)
 	}
 
 	return true;
+}
+
+bool log_write(char *path, char *string)
+{
+	FIL file;
+	FRESULT stat;
+	bool ret_val = true;
+
+	if(f_stat(path, NULL) != FR_OK)
+	{
+		stat = f_open(&file, path, FA_CREATE_ALWAYS | FA_WRITE);
+		if(stat != FR_OK) return false;
+	}
+	else
+	{
+		stat = f_open(&file, path, FA_WRITE);
+		if(stat != FR_OK) ret_val = false;
+
+		stat = f_lseek(&file, f_size(&file));
+		if(stat != FR_OK)
+		{
+			f_close(&file);
+			return false;
+		}
+	}
+
+	UINT btw = strlen(string);
+	UINT bw;
+
+	stat = f_write(&file, string, btw, &bw);
+	if(stat != FR_OK || bw != btw) ret_val = false;
+
+	f_close(&file);
+	return ret_val;
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t pin)

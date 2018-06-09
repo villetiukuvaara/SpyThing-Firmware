@@ -25,6 +25,8 @@
 #include "stdbool.h"
 
 uint8_t audio_init(void);
-uint8_t audio_record(FIL *file, uint32_t millis, bool append);
+uint8_t audio_record(uint32_t millis);
+uint8_t audio_record_init(FIL *file);
+uint8_t audio_record_end(void);
 
 #endif /* AUDIO_AUDIO_H_ */

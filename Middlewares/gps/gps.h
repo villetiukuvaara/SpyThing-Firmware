@@ -189,6 +189,7 @@ gps_status_t gps_start();
 gps_status_t gps_stop();
 gps_status_t gps_set_geofences(gps_geofence_t *fences, uint8_t n_fences);
 gps_data_status_t gps_get_geofence(int8_t *inside);
+gps_status_t gps_save_settings();
 void gps_i2c_rxcplt_callback();
 void gps_i2c_txcplt_callback();
 void gps_i2c_error_callback();
